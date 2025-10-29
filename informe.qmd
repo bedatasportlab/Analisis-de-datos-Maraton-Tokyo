@@ -33,7 +33,8 @@ library(viridis) # Paletas de color para los gráficos.
 library(plotly) # Para gráficas de mapas.
 library(gapminder) # Usaremos este paquete para la lista de países estándar
 library(patchwork) # para combinar gráficos ggplot2
-
+library(skimr)
+library(naniar)
 ```
 
 # Introducción
@@ -100,7 +101,7 @@ El dataframe importado, *resultadosTokyo2025*, consta de las siguientes variable
 
 *Nota: El gross time es el tiempo que tarda un corredor en terminar la maratón desde que se da el pistoletazo de salida, no desde que cruza la línea de inicio de la prueba*
  
-## Lectura de una fila
+## Lectura de una fila{#sec-lecturafila}
 
 Una vez que conocemos el significado de cada variable por separado, se va a proceder a la lectura de la primera fila del *dataframe* con el objetivo de mejorar la comprensión sobre el formato de los datos:
 
@@ -136,64 +137,173 @@ cat(
 rm(filas, columnas)
 ```
 
-## Descripción estadística del DataFrame
+# Preparación y limpieza de los datos
 
-En este apartado se calculan las estadísticas para comprobar qué datos es necesario limpiar y posteriormente poder hacer un análisis fiable.
+Como se ha podido observar en la lectura @sec-lecturafila, el dataset presenta diversas particularidades que requieren atención antes de proceder con el análisis estadístico univariante. En primer lugar, algunas variables presentan formatos mixtos (japonés e inglés separados por "/"), lo cual dificulta la legibilidad y el procesamiento posterior. En segundo lugar, los tiempos están almacenados en formato HMS (horas:minutos:segundos), lo que complica operaciones aritméticas y comparaciones. 
+
+Esta sección se procederá a la preparación del dataset mediante:
+
+1. **Detección y tratamiento de valores nulos e inconsistencias**: identificación de datos faltantes, duplicados y valores atípicos que comprometan la calidad del análisis.
+
+2. **Estandarización de formatos**: homogeneización de variables textuales (nombres, nacionalidades) para mejorar la legibilidad, facilitar una posible portabilidad del código (permitiendo cruzar datos con otros maratones) y habilitar nuevas formas de análisis posteriores.
+
+3. **Transformación y creación de variables derivadas**: conversión de tiempos a formato numérico (segundos), cálculo de ritmos parciales cada 5 km, y categorización de corredores según nivel de rendimiento (élite, semi-profesional, amateur).
+
+Estas transformaciones permitirán un análisis univariante y multivariante más robusto y facilitarán la interpretación de patrones de rendimiento en la carrera.
+
+## Detección de Problemas de Calidad {#sec-deteccion-problemas}
+
+En la actual sección se procederá a realizar un análisis de los posibles valores tomados por cada variable del conjunto de datos con el objetivo de detectar posibles irregularidades en los datos, ya sea a través de datos nulos (ya detectados u ocultos), duplicados, inconsistencias o valores atípicos. Para ello, vamos a comenzar con un vistazo a los datos agrupado por cada variable: 
+
 ```{r}
-#Estadísticas de Edad
-resumen_edad <- data.frame(
-    Minimo = min(resultadosTokyo2025$Edad, na.rm = TRUE),
-    Maximo = max(resultadosTokyo2025$Edad, na.rm = TRUE),
-    Media = round(mean(resultadosTokyo2025$Edad, na.rm = TRUE),2),
-    Nulos = sum(is.na(resultadosTokyo2025$Edad))
-)
-resumen_edad
+# Resumen global de todas las variables.
+skimr::skim(resultadosTokyo2025)
+
+# Resumen específico: Variable BIB. 
+cat("La variable BIB contiene ", n_distinct(resultadosTokyo2025$BIB), "valores distintos")
+
+# Resumen específico: Variable EDAD. 
+cat("La variable Edad tiene los siguientes valores distintos: ", unique(resultadosTokyo2025$Genero))
+
+# Resumen específico: Variable Nacionalidad. 
+
+cat("La variable nacionalidad toma los siguientes valores: ", unique(resultadosTokyo2025$Nacionalidad))
 ```
 
+De este resumen podemos resaltar que: 
+
+- Existen 35916 nombres únicos en el conjunto de datos, pero 36173 corredores, habrá que analizar **posibles duplicados**.
+- En los parciales, existen **datos faltantes NA**. 
+- En la variable *Nacionalidad*, existen valores de tipo **-** que determinan **datos faltantes ocultos**. 
+
+Tras este primer análisis global de las variables, vamos a proceder a identificar concretamente los problemas de calidad y tras ello, a tratarlos. 
+
+### Duplicados e Inconsistencias {#sec-duplicados}
+
+Comenzamos realizando un análisis de posibles datos duplicados. Se ha podido observar en el análisis inicial que teníamos datos duplicados en las variables: 
+
+- *Nombre*
+- *Parciales*. 
+
+Cabe destacar que es normal que, al haber tantos corredores, existan datos duplicados en los parciales, ya que los corredores podían encontrarse en paralelo (o con diferencia menor a un minuto) al paso de cada sector y por ello tienen en esa variable el mismo dato. 
+
+Respecto a los duplicados en la variable *Nombre*, vamos a proceder a hacer un pequeño análisis con el objetivo de identificar el por qué de ello. Vamos a comenzar visualizando en una tabla aquellas filas identificadas con valores duplicados en la variable *Nombre*:
+
 ```{r}
-#Estadísticas tiempo
-cols_tiempo <- c("tiempo_oficial", "parcial_5km", "parcial_10km", "parcial_15km", "parcial_20km", "medio_maraton", "parcial_25km", "parcial_30km", "parcial_35km", "parcial_40km")
 
-resultadosTokyo2025[cols_tiempo] <- lapply(resultadosTokyo2025[cols_tiempo], as_hms) #columnas a tipo hms
+nombres_duplicados <- resultadosTokyo2025 %>%
+  group_by(Nombre) %>%
+  filter(n() > 1) %>%
+  ungroup() %>%
+  arrange(Nombre)
 
-resumen_tiempos <- data.frame(
-  Minimo = sapply(resultadosTokyo2025[cols_tiempo], min, na.rm = TRUE),
-  Maximo = sapply(resultadosTokyo2025[cols_tiempo], max, na.rm = TRUE),
-  Media  = sapply(resultadosTokyo2025[cols_tiempo], function(x) round(mean(x, na.rm = TRUE), 2)),
-  Nulos  = sapply(resultadosTokyo2025[cols_tiempo], function(x) sum(is.na(x)))
+# Dimensiones
+cat("Total de filas con nombres duplicados:", nrow(nombres_duplicados), "\n")
+cat("Cantidad de nombres únicos duplicados:", n_distinct(nombres_duplicados$Nombre), "\n")
+
+datatable(
+  nombres_duplicados,
+  options = list(
+    pageLength = 10,      # Muestra 10 filas por página
+    scrollX = TRUE,       # Habilita el scroll horizontal
+    dom = 'tip'           # Muestra la tabla, información ("Showing...") y paginación
+  ),
+  rownames = FALSE      # Quita los números de fila
 )
-resumen_tiempos
+
 ```
 
+De esta tabla y resumen podemos observar lo siguiente: 
+
+- Existen **valores nulos ocultos** identificados cómo (\**\* *** / ＊＊＊ ＊＊＊)
+- Existen nombres duplicados entre los corredores pero, tanto el BIB como los tiempos parciales son completamente distintos. Por lo tanto son datos **consistentes**. 
+
+Vamos a proceder a determinar como NA's reconocidos por el lenguaje estos valores nulos ocultos: 
+
 ```{r}
-#Estadísticas tiempos en hms
-resumen_tiempos_convertidos <- data.frame (
-  Minimo_hms = resumen_tiempos$Minimo <- as_hms((resumen_tiempos$Minimo)),
-  Maximo_hms = resumen_tiempos$Maximo <- as_hms((resumen_tiempos$Maximo)),
-  Media_hms = resumen_tiempos$Media <- as_hms((resumen_tiempos$Media)),
-  Nulos  = sapply(resultadosTokyo2025[cols_tiempo], function(x) sum(is.na(x)))
-)
-resumen_tiempos_convertidos
+# Eliminamos los datos recién creados: 
+rm(nombres_duplicados)
+# Modificamos el df inicial añadiendo estos datos faltantes. 
+resultadosTokyo2025 <- resultadosTokyo2025 %>% mutate(Nombre = na_if(Nombre, "*** *** / ＊＊＊ ＊＊＊"))
+
 ```
 
-Gracias a la descripción estadística se ha comprobado que los datos de los tiempos y las edades son coherentes y se han podido observar qué parciales no tienen valores asociados. Cabe destacar que todos los deportistas que aparecen en el dataframe, aunque en algunos casos no estén registrados todos sus parciales, llevaron a término la prueba, ya que el total de valores faltantes que hay en la columna de tiempo oficial es 0.
 
-## Limpieza de datos
+Una vez identificados los datos nulos ocultos de la variable *Nombre*, vamos a continuar con la variable *Nacionalidad*, como bien hemos detectado en @sec-deteccion-problemas, esta variable toma valores "-" que corresponden a corredores a los que les falta el dato de la nacionalidad. Vamos a modificar este valor para tener identificados los datos nulos correspondientes a esta variable: 
 
-### Datos faltantes
-
-En esta sección se busca identificar cuáles son los tiempos parciales que faltan para cada corredor.
 ```{r}
+resultadosTokyo2025<- resultadosTokyo2025 %>% mutate(Nacionalidad = na_if(Nacionalidad, "-"))
+```
+
+### Valores Atípicos Lógicos {#sec-atipicos-logicos}
+Tras una revisión preliminar de las variables numéricas en la sección @sec-deteccion-problemas, los datos de tiempos finales y parciales no presentan valores evidentemente imposibles, como registros negativos o duraciones extrañas.
+
+Sin embargo, es crucial verificar la integridad lógica secuencial de los datos. Por ello, esta sección se centrará en detectar parciales inconsecuentes. Este tipo de anomalía ocurre cuando el tiempo acumulado en un punto de control es erróneamente menor que el del punto de control anterior (es decir, tiempo_parcial_X+1 < tiempo_parcial_X), lo cual es físicamente imposible y señala un error en la captura o registro de los datos.
+
+```{r}
+inconsistentes_parciales <- resultadosTokyo2025 %>%
+  filter(
+    parcial_5km >= parcial_10km |
+    parcial_10km >= parcial_15km |
+    parcial_15km >= parcial_20km |
+    parcial_20km >= medio_maraton |
+    medio_maraton >= parcial_25km |
+    parcial_25km >= parcial_30km |
+    parcial_30km >= parcial_35km |
+    parcial_35km >= parcial_40km |
+    parcial_40km >= tiempo_oficial
+  )
+
+dim(inconsistentes_parciales)
+
+```
+
+Observamos que el filtrado recibe 0 filas que cumplan que un parcial posterior tenga menor tiempo acumulado que uno anterior, por lo tanto no existen valores atípicos lógicos sobre estas variables. 
+
+```{r}
+rm(inconsistentes_parciales)
+```
+
+
+### Valores Nulos y Faltantes {#sec-valores-nulos}
+En esta subsección se realizará un análisis de los valores nulos y faltantes que existen en el conjunto de datos con el objetivo de identificar posibles patrones y establecer una estrategia para tratarlos. 
+
+Para ello, comenzamos realizando un análisis de completitud por variable: 
+
+```{r}
+naniar::miss_var_summary(resultadosTokyo2025)
+```
+
+Se puede observar que tenemos un porcentaje total de datos nulos extremadamente bajo en cada variable. Se pueden observar que los datos nulos se agrupan en: 
+
+1. Datos nulos en la variable *Nombre*
+2. Datos nulos en la variable *Nacionalidad*
+3. Datos nulos en las variables referentes a *Parciales*
+
+En los dos primeros casos, se ha decidido no realizar ninguna imputación ni tampoco eliminar las filas afectadas. Estos registros no se considerarán a la hora de realizar estudios univariantes o bivariantes que las involucren, manteniendo así información de especial relevancia en las demás variables. 
+
+Respecto al último caso, vamos a realizar un estudio para entender qué forma tienen los datos nulos asociados a los *Parciales*, para ello, comenzamos visualizando las filas con algún NA en estas filas: 
+
+```{r}
+# Definimos en un vector las columnas de parciales: 
+cols_tiempo <- c("parcial_5km", "parcial_10km", "parcial_15km", "parcial_20km", "medio_maraton", "parcial_25km", "parcial_30km", "parcial_35km", "parcial_40km")
+
+# Definimos las distancias asociadas a cada columna de parciales: 
+dist <- c(5, 10, 15, 20, 21.0975, 25, 30, 35, 40)
+
 #Filas con NA
 filas_con_na <- resultadosTokyo2025[ rowSums(is.na(resultadosTokyo2025[cols_tiempo])) > 0, ]
-which(is.na(resultadosTokyo2025[cols_tiempo]), arr.ind = TRUE)
 
-#Filas con NA en cada columna
-filas_con_na <- resultadosTokyo2025[rowSums(is.na(resultadosTokyo2025[cols_tiempo])) > 0, ]
-head(filas_con_na, 20)
-
-filas_con_na <- as.data.frame(filas_con_na)
-str(filas_con_na)
+# Mostramos el dataframe formado por todas las filas que tienen al menos un valor faltante: 
+datatable(
+  filas_con_na,
+  options = list(
+    pageLength = 10,      # Muestra 10 filas por página
+    scrollX = TRUE,       # Habilita el scroll horizontal
+    dom = 'tip'           # Muestra la tabla, información ("Showing...") y paginación
+  ),
+  rownames = FALSE      # Quita los números de fila
+)
 ```
 
 Antes de seguir trabajando sobre el dataframe, es conveniente hacer una copia para trabajar sobre la copia sin tocar los datos originales por los erroes que pueda haber. 
@@ -201,31 +311,43 @@ Antes de seguir trabajando sobre el dataframe, es conveniente hacer una copia pa
 ```{r}
 df_trabajo <- resultadosTokyo2025
 ```
+
+Tras ello, vamos a visualizar, de cada fila, cuántos valores nulos en total tiene: 
 ```{r}
-cols_tiempo <- c("parcial_5km", "parcial_10km", "parcial_15km", "parcial_20km", "medio_maraton", "parcial_25km", "parcial_30km", "parcial_35km", "parcial_40km")
-
-dist <- c(5, 10, 15, 20, 21.0975, 25, 30, 35, 40)
-
 filas_con_na <- df_trabajo[rowSums(is.na(df_trabajo[, cols_tiempo])) > 0, ]
 filas_con_na$n_na <- rowSums(is.na(filas_con_na[, cols_tiempo]))
 
-head(filas_con_na[, c(cols_tiempo, "n_na")])
+unique(filas_con_na$n_na)
 ```
 
-Habiendo identificado las filas con valores NA y la situacion de dichos valores en las columnas, se procede a valorar si a qué corredores se les va a estimar algún parcial o no. El criterio es el que aquí sigue:
 
-Si una fila tiene 2 o más parciales sin tiempo registrado consecutivos no se considerará imputable ya que la falta de tan solo dos valores faltantes consecutivos implica un desconocimiento del desarrollo de la prueba durante 15 kilómetros. Asumir un ritmo constante durante 15 kilómetros en una disciplina de duración tan larga como la maratón en atletas amateur (son los que tienen los parciales sin registrar) y en el tramo central de la carrera es irreal.
-
-De esta forma, solo se tendrían en cuenta para imputar aquellas filas cuyos parciales puedan calcularse con el tiempo inmediatamente anterior y/o posterior.
+Por lo que se puede observar, el número de parciales faltantes puede ser 1, 2, 3, 5, 8 ó 9. Para finalizar el estudio de la forma de los valores nulos y faltantes de nuestro conjunto de datos, vamos a visualizar de todas estas filas, el número de parciales faltantes **consecutivos**, ya que será de vital importancia posterior. 
 
 ```{r}
+
 filas_con_na$max_na_consec <- sapply(1:nrow(filas_con_na), function(i) {
   elems <- unlist(filas_con_na[i, cols_tiempo])
   na_vec <- is.na(elems)
   if(all(!na_vec)) return(0)
   max(rle(na_vec)$lengths[rle(na_vec)$values == TRUE])
 })
+
+unique(filas_con_na$max_na_consec)
 ```
+
+Podemos observar viendo los valores que toma esta variable que, el número de parciales consecutivos faltantes puede ser 1,2,3,4 o 9.
+
+## Limpieza y Corrección de Datos {#sec-correccion}
+En esta sección se realizará la correspondiente limpieza y correción de datos. 
+### Tratamiento de Valores Nulos {#sec-tratamiento-nulos}
+
+Vamos a realizar el correspondiente tratamiento de los **valores nulos**, como bien hemos adelantado en la @sec-valores-nulos, los datos faltantes correspondientes a las variables de *Nombre* y *Nacionalidad* ni se imputarán ni se eliminarán dichas filas. 
+
+Respecto a la estrategia para los parciales, cabe destacar que ninguno de las filas corresponde a abandonos o descalificaciones ya que sí que existe su tiempo final al paso por la meta. Se ha decidido tratar los datos nulos de la siguiente manera: 
+
+- Si una fila tiene 2 o más parciales sin tiempo registrado consecutivos, no se considerará imputable debido a que supone un desconocimiento de 15 kilómetros. Asumir un ritmo constante durante 15 kilómetros en una disciplina de duración tan larga como la maratón en atletas amateur (son los que tienen parciales sin registrar) es irreal.
+
+Por lo tanto, de las 43 filas con datos nulos que teníamos, vamos a imputar las siguientes: 
 
 ```{r}
 filas_con_na$clasificacion <- ifelse(
@@ -235,24 +357,44 @@ filas_con_na$clasificacion <- ifelse(
 )
 filas_con_na$descarte <- filas_con_na$clasificacion == "descartar"
 filas_para_imputar <- filas_con_na[filas_con_na$descarte == FALSE, ]
+datatable(
+  filas_para_imputar,
+  options = list(
+    pageLength = 10,      # Muestra 10 filas por página
+    scrollX = TRUE,       # Habilita el scroll horizontal
+    dom = 'tip'           # Muestra la tabla, información ("Showing...") y paginación
+  ),
+  rownames = FALSE      # Quita los números de fila
+)
 ```
 
-Recogidos los valores que pueden imputarse se procede a destacar 4 casos distintos según cuál sea el parcial desconocido:
+Es decir, se produce un descarte de 9 filas del conjunto de datos, ya que tienen más de dos parciales consecutivos con datos faltantes. Respecto a las filas que sí son imputables, hay que tener en cuenta la forma en la que lo vamos a realizar dependiendo cuál sea el parcial faltante: 
 
-Si no está el parcial de 5km se debe tener en cuenta que el ritmo en el primer tramo de la maratón es en promedio un 5% más rápido que el ritmo de tramos posteriores.
+- Si el dato faltante es **parcial_5km**, se imputará teniendo en cuenta que el ritmo en el primer tramo de la maratón es, en promedio un 5% más rápido que el ritmo de tramos posteriores.
+- Si el dato faltante es **parcial_40km**, habrá que considerar que desde el parcial 35 hay 5km de distancia pero para la llegada a la meta hay 2km y 195m.
+- Si el dato faltante es **media_maraton**, es preciso saber que desde el parcial del kilómetro 20 hay 1km y 96m de distancia y 3km 904m hasta el kilómetro 25.
+- Si el dato faltante es cualquier otro parcial, se imputará calculando el tiempo de paso con los parciales inmediatamente anterior y posterior a él.
 
-Si el kilómetro 40 es el faltante, al hacer los cálculos hay que considerar que desde el parcial 35 hay 5km de distancia pero para la llegada a la meta hay 2km y 195m.
-De igual manera, si no se sabe el tiempo de paso por la media maratón es preciso saber que desde el parcial del kilómetro 20 hay 1km y 96m de distancia y 3km 904m hasta el kilómetro 25.
+Vamos a comenzar por ello, descartando del conjunto de datos las filas que hemos clasificado como no imputables, lo haremos realizando un cruce por el BIB (único) y filtrando aquellas filas cuya clasificación sea "descartar": 
 
-El cuarto caso es el de un parcial que pueda calcularse con el tiempo de paso inmediatamente anterior y posterior a él.
+```{r}
+bibs_a_descartar <- filas_con_na %>%
+  filter(clasificacion == "descartar") %>%
+  select(BIB)
+
+resultadosTokyo2025<- resultadosTokyo2025 %>%
+  anti_join(bibs_a_descartar, by = "BIB")
+
+rm(bibs_a_descartar, filas_con_na)
+```
+
+Una vez descartados aquellos corredores no imputables, vamos a realizar la imputación de aquellos que sí que es posible realizarla. Para ello, vamos a comenzar imputando aquellos tiempos que no sean ni *parcial_5km* ni *parcial_40km*, para ello, creamos la siguiente función que gracias a una **interpolación lineal estándar**, nos ayudará a calcular el tiempo que necesitamos imputar con los tiempos y distancias previo y posterior: 
 
 ```{r}
 imputar_parciales <- function(tiempos, dist, cols_tiempo) {
   if (!inherits(tiempos, "hms")) tiempos <- hms::as_hms(tiempos)
-  idx_medio <- which(cols_tiempo == "medio_maraton")
   
   for (i in seq_along(tiempos)) {
-    if (i == idx_medio) next
     if (is.na(tiempos[i])) {
       
       prev_idx <- max(which(!is.na(tiempos[1:(i - 1)])), na.rm = TRUE)
@@ -270,6 +412,7 @@ imputar_parciales <- function(tiempos, dist, cols_tiempo) {
   }
   return(tiempos)
 }
+
 primera_imputacion <- as.data.frame(
   t(apply(filas_para_imputar[cols_tiempo], 1, imputar_parciales, dist = dist, cols_tiempo = cols_tiempo))
 )
@@ -278,28 +421,10 @@ primera_imputacion[cols_tiempo] <-
   lapply(primera_imputacion[cols_tiempo], hms::as_hms)
 ```
 
-```{r}
-#Añadir a primera_imputacion la imputacion de medio_maraton
-
-idx_20 <- which(cols_tiempo == "parcial_20km")
-idx_media <- which(cols_tiempo == "medio_maraton")
-idx_25 <- which(cols_tiempo == "parcial_25km")
-
-filas_na <- which(is.na(primera_imputacion$medio_maraton))
-
-d_20 <- dist[idx_20]
-d_media <- dist[idx_media]
-d_25 <- dist[idx_25]
-
-primera_imputacion$medio_maraton[filas_na] <- hms::as_hms(
-  (primera_imputacion$parcial_20km[filas_na] * (d_25 - d_media) +
-     primera_imputacion$parcial_25km[filas_na] * (d_media - d_20)) / (d_25 - d_20)
-)
-```
+Tras la imputación correcta de los parciales intermedios, añado la imputación de aquellos valores faltantes a los **5km**, que se realizará calculando el ritmo medio estimando con el parcial de los 10km, y multiplicándolo por un factor salida de un 95%, es decir, que el tiempo de paso por los 5km es un 5% más rápido. Para ello: 
 
 ```{r}
 #Añadir a primera_imputacion la imputacion de parcial_5km
-
 idx_5 <- which(cols_tiempo == "parcial_5km")
 idx_10 <- which(cols_tiempo == "parcial_10km")
 
@@ -315,9 +440,10 @@ primera_imputacion$parcial_5km[filas_na_5] <- hms::as_hms(
 )
 ```
 
+Para la imputación del parcial de **40km**, se ha decidido usar el ritmo justamente anterior, es decir, el tiempo que tardó al paso por el parcial del 30 al 35, es el mismo del 35 al 40, por lo tanto se suma esa diferencia de tiempo para obtener el tiempo de paso por el kilómetro 40 de la prueba. 
+
 ```{r}
 #Añadir a primera_imputacion la imputacion del parcial_40km
-
 idx_35 <- which(cols_tiempo == "parcial_35km")
 idx_40 <- which(cols_tiempo == "parcial_40km")
 d_35 <- dist[idx_35]
@@ -331,6 +457,8 @@ primera_imputacion$parcial_40km[filas_na_40] <- hms::as_hms(
 )
 ```
 
+Tras ello, redondeamos los tiempos del formato hms:
+
 ```{r}
 redondear_hms <- function(x) {
   seg_total <- as.numeric(x)
@@ -343,152 +471,224 @@ primera_imputacion[cols_tiempo] <- lapply(
 )
 ```
 
-```{r}
-df_trabajo[rownames(filas_para_imputar), cols_tiempo] <- primera_imputacion
-resultadosTokyo2025 <- df_trabajo
-```
 
-### Valores únicos - datos duplicados
+Por último, añadimos las imputaciones correspondientes al conjunto de datos inicial: 
 
 ```{r}
-cols_para_duplicados <- c(cols_tiempo, "BIB")
-valores_unicos <- lapply(df_trabajo[cols_para_duplicados], unique)
-valores_unicos
-```
+filas_para_imputar[rownames(filas_para_imputar), cols_tiempo] <- primera_imputacion
 
-```{r}
-n_unicos <- sapply(valores_unicos, length) #Valores únicos por columna
-n_filas <- nrow(df_trabajo) # Número de filas total
+# Elimino las columnas creadas. 
+filas_para_imputar <- filas_para_imputar[, !(names(filas_para_imputar) %in% c("n_na", "max_na_consec", "clasificacion", "descarte"))]
+# Cargo los datos imputados actualizando las filas correspondientes.
+resultadosTokyo2025 <- resultadosTokyo2025 %>%
+  rows_update(filas_para_imputar, by = "BIB")
 
-for(col in names(n_unicos)){ # Comprobar si hay duplicados
-  if(n_unicos[col] == n_filas){
-    message(paste("Columna", col, ": Ningún valor duplicado"))
-  } else {
-    message(paste("Columna", col, "tiene duplicados"))
-  }
-}
-```
-
-En este apartado se ha comprobado que no hay ningún corredor duplicado y que en todos los parciales hay pocos valores duplicados, lo que es coherente con el formato de carrera de una maratón. Es raro que haya grupos de carrera grandes en una disciplina de tan larga duración y con participantes de niveles tan dispares.
-
-```{r}
-duplicados_df <- data.frame( # Crear un data frame vacío para guardar los duplicados
-  columna = character(),
-  valor = character(),
-  frecuencia = integer(),
-  stringsAsFactors = FALSE
-)
-for (col in cols_tiempo) { # Recorrer las columnas de tiempo
-  freq <- table(df_trabajo[[col]])           # frecuencia de cada valor
-  duplicados <- freq[freq > 1]               # solo los que aparecen más de una vez
-  
-  if (length(duplicados) > 0) {
-    temp <- data.frame(
-      columna = col,
-      valor = names(duplicados),
-      frecuencia = as.integer(duplicados),
-      stringsAsFactors = FALSE
-    )
-    duplicados_df <- rbind(duplicados_df, temp)
-  }
-}
-duplicados_df
+print("Datos faltantes imputados")
 ```
 
 ```{r}
-for(col in cols_tiempo){
-  freq <- table(df_trabajo[[col]])  # cuenta cuántas veces aparece cada valor
-  duplicados <- freq[freq > 1]               # filtra solo los que aparecen más de una vez
-  if(length(duplicados) > 0){
-    cat("\nColumna:", col, "\n")
-    print(duplicados)
-  } else {
-    cat("\nColumna:", col, "→ Ningún duplicado\n")
-  }
-}
+# Elimino todos los valores, datos y funciones creadas:
+rm(df_trabajo, filas_para_imputar, primera_imputacion, d_5, d_10, d_35, d_40, dist, factor_salida, filas_na_5, filas_na_40, idx_5, idx_10, idx_35, idx_40, imputar_parciales, redondear_hms)
 ```
 
-### Transformación de datos
 
-### Comprobación de calidad antes del análisis
+Por último, observo el análisis de completitud para ver cómo se ha quedado el conjunto de datos: 
 
 ```{r}
-sapply(resultadosTokyo2025[cols_tiempo], function(x) sum(is.na(x)))
-
-resultadosTokyo2025$n_na_fila <- rowSums(is.na(resultadosTokyo2025[cols_tiempo]))
-head(resultadosTokyo2025[, c("BIB", "n_na_fila")])
+skimr::skim(resultadosTokyo2025)
 ```
 
-Los corredores cuyos tiempos parciales que se han quedado sin imputar no se van a eliminar del dataframe para poder seguir contando con su tiempo final en el análisis de esa variable. Para el análisis univariante de los tiempos parciales solamente se obviarán esas filas (las filas descartadas para la imputación han sido 9).
+## Estandarización de Formatos {#sec-estandarizacion}
+En esta sección se realizará una estandarización de formatos en los valores de algunas columnas. 
+
+### Género de los participantes {#sec-estandarizar-genero}
+
+Debido a que los datos han sido extraídos de una web japonesa, los valores de la columna *Genero* presentan un formato bilingüe, con caracteres tanto japoneses como ingleses, separados por el caracter */*. Para facilitar posteriores análisis y visualizaciones, se ha tomado la decisión de unificar esta variable a un único idioma, en este caso, el inglés. Una vez limpia, la convertimos a **factor**. Para ello: 
 
 ```{r}
-cols_validar <- c("tiempo_oficial", cols_tiempo, "Edad")
-
-resumen_calidad <- resultadosTokyo2025 %>%
-  select(all_of(cols_validar)) %>%
-  summarise(across(everything(), list(
-    Minimo = ~if(is.numeric(.)) min(., na.rm = TRUE) else as_hms(min(., na.rm = TRUE)),
-    Maximo = ~if(is.numeric(.)) max(., na.rm = TRUE) else as_hms(max(., na.rm = TRUE)),
-    Media  = ~if(is.numeric(.)) mean(., na.rm = TRUE) else as_hms(mean(as.numeric(.), na.rm = TRUE))
-  ), .names = "{.col}_{.fn}"))
-
-resumen_calidad_tidy <- t(resumen_calidad)
-colnames(resumen_calidad_tidy) <- "Valor"
-
-resumen_calidad_tidy
-```
-
-# Análisis Univariante
-
-En esta sección se realizará un análisis descriptivo completo de cada una de las variables del conjunto de datos por separado.
-
-## DF temporal (borrar cuando esté lista la parte de Limpieza de Datos)
-
-```{r}
-resultadosTokyo2025 <- read_csv(
-  "data/Maraton_Tokyo/marathon_tokyo_results_2025.csv",
-  col_types = cols(
-    BIB = col_integer(),
-    Nombre = col_character(),
-    Nacionalidad = col_character(),
-    Genero = col_character(),
-    Edad = col_integer(),
-    tiempo_oficial = col_time(format = "%H:%M:%S"),
-    parcial_5km = col_time(format = "%H:%M:%S"),
-    parcial_10km = col_time(format = "%H:%M:%S"),
-    parcial_15km = col_time(format = "%H:%M:%S"),
-    parcial_20km = col_time(format = "%H:%M:%S"),
-    medio_maraton = col_time(format = "%H:%M:%S"),
-    parcial_25km = col_time(format = "%H:%M:%S"),
-    parcial_30km = col_time(format = "%H:%M:%S"),
-    parcial_35km = col_time(format = "%H:%M:%S"),
-    parcial_40km = col_time(format = "%H:%M:%S")
-  ),
-  quote = "\""
-)
-
-# Transformacion a formato dataframe.
-resultadosTokyo2025 <- as.data.frame(resultadosTokyo2025)
-```
-
-```{r}
-df_seconds <- resultadosTokyo2025 %>%
+resultadosTokyo2025 <- resultadosTokyo2025 %>%
   mutate(
-    across(
-      matches("^tiempo_oficial$|^parcial_\\d+km$|^medio_maraton$"),
-      ~ as.numeric(.x)
+    # Modificamos la columna 'Género'
+    Genero = str_remove(Genero, "^.*／")
+  )
+
+resultadosTokyo2025$Genero <- as.factor(resultadosTokyo2025$Genero)
+```
+
+
+### Nombre de los participantes {#sec-estandarizar-nombre}
+
+Al igual que el *Genero*, la variable *Nombre* presenta los nombres de cada participante con el mismo formato bilingüe, es por ello que también nos quedaremos con el idioma inglés, ya que esto nos abre la posibilidad de poder cruzar datos con otros maratones si en algún momento del análisis queremos hacer un análisis longitudinal de algún deportista. 
+
+```{r}
+# Versión compacta para reemplazar la columna original
+resultadosTokyo2025 <- resultadosTokyo2025 %>%
+  mutate(
+    Nombre = coalesce(str_trim(str_split_i(Nombre, "/", 2)), Nombre)
+  )
+```
+
+### Códigos de Nacionalidad {#sec-estandarizar-nacionalidad}
+
+Con el objetivo de poder definir de manera estándar y acorde a códigos para poder graficar más adelante países, se ha decidido estandarizar la variable *Nacionalidad*, ya que se puede observar cómo contiene carácteres especiales japonenes o incluso regiones cuyo nombre de país es distinto, es por ello que visualizamos primeramente los nombres:
+
+```{r}
+conteo_paises <- resultadosTokyo2025 %>%
+   count(Nacionalidad, sort = TRUE, name = "Numero_Corredores")
+
+# Lo visualizamos con la libreria DT porque es más interactiva a la hora de generar el documento qmd. 
+datatable(
+  conteo_paises,
+  options = list(
+    pageLength = 10,
+    scrollX = TRUE
+  ),
+  rownames = FALSE,  # Elimina los números de fila
+  colnames = c("País", "Número de Corredores")
+)
+```
+
+Se peude observar que no existen países con el nombre duplicado (es decir, varios nombres para el mismo país). 
+
+Vamos a crear una nueva variable en nuestro conjunto de datos que se relacione con el país con el nombre ya estandarizado, *Pais_Estandarizado*. 
+
+```{r}
+
+resultadosTokyo2025 <- resultadosTokyo2025 %>%
+  mutate(
+    # Primero, manejamos el caso del guion para que no interfiera
+    Nacionalidad = na_if(Nacionalidad, "-"),
+    
+    # Ahora, creamos la nueva columna estandarizada
+    Pais_Estandarizado = case_when(
+      Nacionalidad == "日本" ~ "Japan",
+      Nacionalidad == "PR OF CHINA" ~ "China",
+      Nacionalidad == "CHINESE TAIPEI" ~ "Taiwan",
+      Nacionalidad == "GREAT BRITAIN & N.I." ~ "United Kingdom",
+      Nacionalidad == "HONG KONG, CHINA" ~ "Hong Kong",
+      Nacionalidad == "KOREA" ~ "Korea, South",
+      Nacionalidad == "DPR OF KOREA" ~ "Korea, North",
+      Nacionalidad == "F Y REP. OF MACEDONIA" ~ "Macedonia",
+      Nacionalidad == "SLOVAK REPUBLIC" ~ "Slovakia",
+      Nacionalidad == "ISLAMIC REPUBLIC OF IRAN" ~ "Iran",
+      Nacionalidad == "MACAO" ~ "Macau",
+      Nacionalidad == "SAINT KITTS AND NEVIS" ~ "Saint Kitts and Nevis",
+      Nacionalidad == "BAHAMAS" ~ "Bahamas, The",
+      Nacionalidad == "REPUBLIC Of YEMEN" ~ "Yemen",
+      Nacionalidad == "UNITED STATES" ~ "United States", # Usar el nombre completo suele ser más compatible
+      
+      # Para todos los demás países los ponemos en el formato minúsculas con la primera letra en mayúsculas.
+      TRUE ~ str_to_title(Nacionalidad)
     )
   )
 
-# Vista previa
-glimpse(df_seconds)
+conteo_paises_limpios <- resultadosTokyo2025 %>%
+  count(Pais_Estandarizado, sort = TRUE)
+
 ```
 
-<!-- Exploración de variables individuales: distribuciones, estadísticos descriptivos, etc. -->
+Observamos que, en principio, los errores están completamente corregidos. Para ver si los nuevos nombres estandarizados están correctamente, vamos a cruzar los países recién creados con un conjunto de datos muy usado para realizar luego mapas geográficos.
+
+```{r}
+df <- read.csv("https://raw.githubusercontent.com/plotly/datasets/master/2014_world_gdp_with_codes.csv")
+
+paises_validos <- df %>%
+  distinct(COUNTRY) %>%
+  # Renombramos la columna para que coincida con la nuestra y poder hacer el join
+  rename(Pais_Estandarizado = COUNTRY)
+
+
+paises_problematicos <- resultadosTokyo2025 %>%
+  filter(!is.na(Pais_Estandarizado)) %>% # Ignoramos los NA que puedan existir
+  distinct(Pais_Estandarizado) %>%
+  anti_join(paises_validos, by = "Pais_Estandarizado")
+
+dim(paises_problematicos)
+paises_problematicos$Pais_Estandarizado
+
+```
+
+Se observan sólamente 2 países problemáticos (Palestine y Myanmar) por lo tanto, creamos una nueva variable llamada *CODE_PLOTLY* que contendrá el código de cada país según este dataframe subido: 
+
+```{r}
+
+resultadosTokyo2025 <- resultadosTokyo2025 %>%
+  left_join(
+    df %>% select(COUNTRY, CODE),  
+    by = c("Pais_Estandarizado" = "COUNTRY")  
+  )
+
+```
+
+
+```{r}
+rm(conteo_paises, conteo_paises_limpios, df, paises_problematicos, paises_validos)
+```
+
+### Conversión de Tiempos {#sec-convertir-tiempos}
+
+Con el objetivo de poder conseguir mejores análisis tanto univariantes como bivariantes en las variables referentes a tiempos (parciales o finales), se ha decidido convertirlas a segundos (numérico) para poder tratarlas adecuadamente de forma estadística. Cabe destacar que siempre que queramos visualizar las horas, minutos y segundos, podremos volver a convertirlas al formato adecuado. 
+
+```{r}
+resultadosTokyo2025 <- resultadosTokyo2025 %>%
+  mutate(
+    across(where(is_hms), as.numeric)
+  )
+```
+
+## Creación de Variables Derivadas {#sec-variables-derivadas}
+Con el objetivo de lograr una mayor comprensión del conjunto de datos inicial a través de los posteriores estudios, se ha tomado la decisión de crear algunas nuevas variables. 
+### Ritmos Parciales {#sec-ritmos-parciales}
+Se van a crear nuevas variables para determinar el ritmo (min/km) de los corredores al paso de cada uno de los parciales de la prueba. Además se creará una variable con el ritmo promedio basado en el *tiempo_final*.
+
+Para ello: 
+
+```{r}
+# Creacion de la variable ritmo_oficial: 
+resultadosTokyo2025 <- resultadosTokyo2025 %>%
+  mutate(
+    ritmo_oficial = hms(seconds = round((tiempo_oficial) / 42.195)),
+    ritmo_5km = hms(seconds = round((parcial_5km) / 5)),
+    ritmo_10km = hms(seconds = round((parcial_10km - parcial_5km) / 5)),
+    ritmo_15km = hms(seconds = round((parcial_15km - parcial_10km) / 5)),
+    ritmo_20km = hms(seconds = round((parcial_20km - parcial_15km) / 5)),
+    ritmo_25km = hms(seconds = round((parcial_25km - parcial_20km) / 5)),
+    ritmo_30km = hms(seconds = round((parcial_30km - parcial_25km) / 5)),
+    ritmo_35km = hms(seconds = round((parcial_35km - parcial_30km) / 5)),
+    ritmo_40km = hms(seconds = round((parcial_40km - parcial_35km) / 5))
+  )
+```
+
+### Categorización por Nivel de Rendimiento {#sec-categorizacion-nivel}
+Con el principal objetivo de poder analizar posteriormente de una manera más enriquecida los posibles grupos de carrera, se ha decidido crear una nueva variable que determinará el nivel del atleta. Para ello se definirán los siguientes umbrales: 
+
+- Élite: < 2:30:00
+- Semi-profesional: 2:30:00 - 3:30:00
+- Amateur: > 3:30:00
+
+```{r}
+
+# Aqui habría que filtrar por Hombre o Mujer también...
+resultadosTokyo2025 <- resultadosTokyo2025 %>%
+  mutate(
+    Categoria = case_when(
+      tiempo_oficial <= 9000    ~ "Elite",
+      tiempo_oficial <= 12600   ~ "Semi-Profesional",
+      TRUE                         ~ "Amateur"
+    ),
+    
+    # Convertimos la nueva columna a factor con un orden lógico
+    Categoria = factor(Categoria, levels = c("Elite", "Semi-Profesional", "Amateur"))
+  )
+
+```
+
+
+# Análisis Univariante
 
 Bajo este análisis se examinará cada variable del conjunto de datos para resumir su distribución, principales características y tendencias. Este tipo de análisis se centra en **una sola variable a la vez**, sin tener en cuenta su relación con otras, y permite obtener una primera descripción general de los datos. A continuación se revisa cada variable del dataset para observar sus principales características estadísticas.
 
-### Edad
+## Edad
 
 Esta variable indica la **edad** de los corredores que participaron en la maratón. Se trata de una variable numérica discreta. Primero se examinán los principales estadísticos de centralización: media, moda y mediana
 
@@ -502,7 +702,7 @@ moda <- function(x) {
 }
 
 # Estadísticos resumidos (redondeados)
-edad_stats <- df_seconds %>%
+edad_stats <- resultadosTokyo2025 %>%
   summarise(
     Total_valores = sum(!is.na(Edad)),
     Valores_faltantes = sum(is.na(Edad)),
@@ -525,7 +725,7 @@ La edad media de los corredores que participaron en la maratón de Tokyo 2025 es
 Representado de forma gráfica, en la siguiente figura se observa un histograma con línea de densidad.
 
 ```{r}
-ggplot(df_seconds, aes(x = Edad)) +
+ggplot(resultadosTokyo2025, aes(x = Edad)) +
   geom_histogram(aes(y = ..density..), binwidth=2, fill = "#90CAF9", color = "gray30") +
   geom_density(aes(y = ..density..), 
                fill = "#1976D2", alpha = 0.15) +
@@ -539,7 +739,7 @@ En esta gráfica se observa que la distribución de edades de los corredores es 
 A continuación se presentan los estadísticos de dispersión y forma de la distribución de edades.
 
 ```{r}
-edad_disp_forma <- df_seconds %>%
+edad_disp_forma <- resultadosTokyo2025 %>%
   summarise(
     Minimo = min(Edad, na.rm = TRUE),
     Maximo = max(Edad, na.rm = TRUE),
@@ -569,31 +769,23 @@ La asimetría negativa (-0,06) indica que la distribución de edades es ligerame
 En la siguiente grafica se observa un boxplot que muestra la dispersión de las edades de los corredores.
 
 ```{r}
-ggplot(df_seconds, aes(y = Edad)) +
+ggplot(resultadosTokyo2025, aes(y = Edad)) +
   geom_boxplot(fill = "#90CAF9", color = "gray30", outlier.color = "red", outlier.size = 1.5) +
   labs(title = "Boxplot de Edad",
        y = "Edad (años)") +
   theme_minimal(base_size = 12)
 ```
+
 El boxplot muestra que la mayoría de las edades de los corredores están concentradas entre aproximadamente 39 y 50 años, con algunos valores atípicos en ambos extremos. La mediana (línea dentro de la caja) está cerca del centro de la caja, lo que indica una distribución simétrica de las edades. Los bigotes del boxplot indican que no hay valores extremadamente alejados del rango intercuartílico, lo que sugiere una distribución relativamente homogénea de las edades.
+
+
+```{r}
+rm(edad_disp_forma, edad_stats, moda)
+```
 
 ## Género
 
-### LIMPIEZA DE LA VARIABLE GENERO (ESTO VA EN LA PARTE I CUANDO ESTÉ LISTA)
-
-Debido a que los datos han sido extraídos de una web japonesa, los valores de la variable *Genero* presentan un formato bilingüe, con caracteres tanto japoneses como ingleses, separados por el caracter */*. Para facilitar posteriores análisis y visualizaciones, se ha tomado la decisión de unificar esta variable a un único idioma, en este caso, el inglés. Una vez limpia, la convertimos a **factor**. Para ello: 
-
-```{r}
-resultadosTokyo2025 <- resultadosTokyo2025 %>%
-  mutate(
-    # Modificamos la columna 'Género'
-    Genero = str_remove(Genero, "^.*／")
-  )
-
-resultadosTokyo2025$Genero <- as.factor(resultadosTokyo2025$Genero)
-```
-
-### Análisis Univariante(eliminar esta sub-subsección cuando la anterior pase a la parte I)
+### Análisis Univariante
 
 En esta sección se realiza un análisis descriptivo de la variable *Genero*. Para ello, vamos a comenzar inspeccionando las categorías de la variable y sus frecuencias, tanto absoluta (número de corredores) como relativa (porcentaje del total). 
 
@@ -659,109 +851,53 @@ rm(tabla_frecuencias_genero)
 
 ## Nacionalidad
 
-### Limpieza de la variable Nacionalidad. (poner luego en la parte correspondiente)
+### Análisis Univariante
 
-Para realizar la limpieza de la variable nacionalidad, veamos primero en una tabla los posibles valores que toma: 
-
-```{r}
-
-conteo_paises <- resultadosTokyo2025 %>%
-   count(Nacionalidad, sort = TRUE, name = "Numero_Corredores")
-
-# Lo visualizamos con la libreria DT porque es más interactiva a la hora de generar el documento qmd. Arreglar
-datatable(
-  conteo_paises,
-  options = list(
-    pageLength = 10,
-    scrollX = TRUE,
-  rownames = FALSE, # Mantiene la eliminación del número de fila
-  colnames = c("País", "Número de Corredores")
-)
-```
-
-Se peude observar que no existen países con el nombre duplicado (es decir, varios nombres para el mismo país). Aunque existen algunos paises que, si se quisiera hacer un análisis posterior con los nombres de las nacionalidades (para crear mapas por ejemplo), deberían modificar su nombre a un formato estándar en inglés. Además, podemos observar que hay algunos corredores con el país "-", estos deberían convertirse en valores NA. Puesto que son corredores sin ningún tipo de país asociado.
-
-Para ello, vamos a crear una nueva variable en nuestro conjunto de datos que se relacione con el país con el nombre ya estandarizado, *Pais_Estandarizado*. 
+A continuación, se realizará un análisis univariante de la *Nacionalidad* de los corredores, para ello, vamos a realizar un mapa interactivo con la librería *Plotly* en el que se podrá visualizar el número de participantes por país en una escala de colores: 
 
 ```{r}
-
-resultadosTokyo2025 <- resultadosTokyo2025 %>%
-  mutate(
-    # Primero, manejamos el caso del guion para que no interfiera
-    Nacionalidad = na_if(Nacionalidad, "-"),
-    
-    # Ahora, creamos la nueva columna estandarizada
-    Pais_Estandarizado = case_when(
-      Nacionalidad == "日本" ~ "Japan",
-      Nacionalidad == "PR OF CHINA" ~ "China",
-      Nacionalidad == "CHINESE TAIPEI" ~ "Taiwan",
-      Nacionalidad == "GREAT BRITAIN & N.I." ~ "United Kingdom",
-      Nacionalidad == "HONG KONG, CHINA" ~ "Hong Kong",
-      Nacionalidad == "KOREA" ~ "Korea, South",
-      Nacionalidad == "DPR OF KOREA" ~ "Korea, North",
-      Nacionalidad == "F Y REP. OF MACEDONIA" ~ "Macedonia",
-      Nacionalidad == "SLOVAK REPUBLIC" ~ "Slovakia",
-      Nacionalidad == "ISLAMIC REPUBLIC OF IRAN" ~ "Iran",
-      Nacionalidad == "MACAO" ~ "Macau",
-      Nacionalidad == "SAINT KITTS AND NEVIS" ~ "Saint Kitts and Nevis",
-      Nacionalidad == "BAHAMAS" ~ "Bahamas, The",
-      Nacionalidad == "REPUBLIC Of YEMEN" ~ "Yemen",
-      Nacionalidad == "UNITED STATES" ~ "United States", # Usar el nombre completo suele ser más compatible
-      
-      # Para todos los demás países los ponemos en el formato minúsculas con la primera letra en mayúsculas.
-      TRUE ~ str_to_title(Nacionalidad)
-    )
-  )
-
-conteo_paises_limpios <- resultadosTokyo2025 %>%
-  count(Pais_Estandarizado, sort = TRUE)
-
-```
-
-Observamos que, en principio, los errores están completamente corregidos. Para ver si los nuevos nombres estandarizados están correctamente, vamos a cruzar los países recién creados con...
-
-```{r}
-df <- read.csv("https://raw.githubusercontent.com/plotly/datasets/master/2014_world_gdp_with_codes.csv")
-
-paises_validos <- df %>%
-  distinct(COUNTRY) %>%
-  # Renombramos la columna para que coincida con la nuestra y poder hacer el join
-  rename(Pais_Estandarizado = COUNTRY)
-
-
-paises_problematicos <- resultadosTokyo2025 %>%
-  filter(!is.na(Pais_Estandarizado)) %>% # Ignoramos los NA que puedan existir
-  distinct(Pais_Estandarizado) %>%
-  anti_join(paises_validos, by = "Pais_Estandarizado")
-
-```
-
-
-Una vez realizado, creamos una nueva variable llamada *CODE_PLOTLY* que contendrá el código de cada país según este dataframe subido: 
-
-```{r}
-
-resultadosTokyo2025 <- resultadosTokyo2025 %>%
-  left_join(
-    df %>% select(COUNTRY, CODE),  
-    by = c("Pais_Estandarizado" = "COUNTRY")  
-  )
-
-```
-
-### Análisis Univariante (eliminar esta sub-subsección cuando la anterior pase a la parte I)
-
-```{r}
-
+# 1. Contar corredores (asumimos que ya tienes esto)
 frecuencia_paises <- resultadosTokyo2025 %>%
-  count(Pais_Estandarizado, CODE, name = "corredores", sort = TRUE)
+count(Pais_Estandarizado, CODE, name = "corredores", sort = TRUE)
 
-fig <- plot_ly(frecuencia_paises, type='choropleth', locations=frecuencia_paises$CODE, z=frecuencia_paises$corredores, text=frecuencia_paises$COUNTRY, colorscale="Blues")
+# 2. Crear una columna para el logaritmo de corredores
+frecuencia_paises <- frecuencia_paises %>%
+  mutate(corredores_log = log10(corredores + 1))
+
+# 3. Crear mapa interactivo con la escala logarítmica
+fig <- plot_ly(
+  frecuencia_paises,
+  type = 'choropleth',
+  locations = ~CODE,
+  
+  # Z: La variable que define el color ahora es el logaritmo
+  z = ~corredores_log, 
+  
+  # Text: Mantenemos el nombre del país para el hover
+  text = ~Pais_Estandarizado,
+  
+  # Customdata: Guardamos el número real de corredores para mostrarlo en el hover
+  customdata = ~corredores,
+  
+  # Elige una paleta de colores que resalte bien. "Viridis", "Plasma" o "YlOrRd" son buenas opciones.
+  colorscale = "Viridis",
+  reversescale = TRUE, # Invertir la escala para que más sea más oscuro
+  
+  colorbar = list(title = "Corredores (Escala Log)"),
+  
+  # Hovertemplate: Mostramos el número real de participantes usando 'customdata'
+  hovertemplate = "<b>%{text}</b><br>Participantes: %{customdata}<extra></extra>"
+) %>%
+  layout(
+    title = "Distribución de Corredores por País (Maratón de Tokio)",
+    geo = list(showframe = FALSE, showcoastlines = FALSE, projection = list(type = 'mercator'))
+  )
 
 fig
+
 ```
 
-En este mapa se pueden observar los países y su
+En este mapa se pueden observar que el país que más participantes tuvo fue Japón, seguramente debido a que dicho maratón se realizó en este país. Otros países que llevaron más de 1000 corredores fueron Estados Unidos, Taiwán, China e Inglaterra.
 
 ### Tiempo Oficial
 
