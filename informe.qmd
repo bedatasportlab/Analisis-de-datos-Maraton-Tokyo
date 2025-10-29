@@ -35,6 +35,7 @@ library(gapminder) # Usaremos este paquete para la lista de países estándar
 library(patchwork) # para combinar gráficos ggplot2
 library(skimr)
 library(naniar)
+library(grid) # para funciones de gráficos adicionales
 ```
 
 # Introducción
@@ -780,12 +781,10 @@ El boxplot muestra que la mayoría de las edades de los corredores están concen
 
 
 ```{r}
-rm(edad_disp_forma, edad_stats, moda)
+rm(edad_disp_forma, edad_stats)
 ```
 
 ## Género
-
-### Análisis Univariante
 
 En esta sección se realiza un análisis descriptivo de la variable *Genero*. Para ello, vamos a comenzar inspeccionando las categorías de la variable y sus frecuencias, tanto absoluta (número de corredores) como relativa (porcentaje del total). 
 
@@ -851,8 +850,6 @@ rm(tabla_frecuencias_genero)
 
 ## Nacionalidad
 
-### Análisis Univariante
-
 A continuación, se realizará un análisis univariante de la *Nacionalidad* de los corredores, para ello, vamos a realizar un mapa interactivo con la librería *Plotly* en el que se podrá visualizar el número de participantes por país en una escala de colores: 
 
 ```{r}
@@ -899,14 +896,14 @@ fig
 
 En este mapa se pueden observar que el país que más participantes tuvo fue Japón, seguramente debido a que dicho maratón se realizó en este país. Otros países que llevaron más de 1000 corredores fueron Estados Unidos, Taiwán, China e Inglaterra.
 
-### Tiempo Oficial
+## Tiempo Oficial
 
 En el caso de las variables de timepos, se realizará el análisis con las columnas transformadas a segundos pero reflejando los resultados en formato horas, minutos y segundos para una mejor interpretación. Esta transformación implica que la varible es numérica continua. Como en las variables anteriores, se comenzará con los estadísticos de centralización.
 
 ```{r}
 
 # Estadísticos resumidos (redondeados)
-tiempo_stats <- df_seconds %>%
+tiempo_stats <- resultadosTokyo2025 %>%
   summarise(
     Total_valores = sum(!is.na(tiempo_oficial)),
     Valores_faltantes = sum(is.na(tiempo_oficial)),
@@ -939,7 +936,7 @@ Representado de forma gráfica, en la siguiente figura se observa un histograma 
 
 # Convierte a hms para mejor interpretación
 
-ggplot(df_seconds, aes(x = tiempo_oficial)) +
+ggplot(resultadosTokyo2025, aes(x = tiempo_oficial)) +
   geom_histogram(aes(y = ..density..), binwidth=500, fill = "#90CAF9", color = "gray30") +
   geom_density(aes(y = ..density..), 
                fill = "#1976D2", alpha = 0.15) +
@@ -958,7 +955,7 @@ En esta gráfica se observa que la distribución de los tiempos oficiales de los
 A continuación se presentan los estadísticos de dispersión y forma de la distribución de tiempos oficiales.
 
 ```{r}
-tiempo_disp_forma <- df_seconds %>%
+tiempo_disp_forma <- resultadosTokyo2025 %>%
   summarise(
     Minimo = as_hms(min(tiempo_oficial, na.rm = TRUE)),
     Maximo = as_hms(max(tiempo_oficial, na.rm = TRUE)),
@@ -982,7 +979,147 @@ El rango de 4 horas, 56 minutos y 55 segundos indica una amplia variabilidad en 
 
 La asimetría positiva (0.15) indica que la distribución de los tiempos oficiales está ligeramente sesgada hacia la derecha, lo que significa que hay más corredores con tiempos superiores a la media. La curtosis (-0.87) indica que la distribución de los tiempos oficiales es más plana que una distribución normal, lo que sugiere que hay menos valores extremos en los tiempos oficiales de los corredores. 
 
-### Tiempos Parciales
+## Tiempos Parciales
+
+En cuanto a los tiempos parciales se analiza cada parcial de cada 5km por separado. Primero se presentan los estadísticos de centralización para cada parcial.
+
+```{r}
+# cols_tiempo pero quitando timepo_oficial
+tiempos_parciales <- c(
+  "parcial_5km","parcial_10km","parcial_15km","parcial_20km","medio_maraton",
+  "parcial_25km","parcial_30km","parcial_35km","parcial_40km"
+)
+
+# Tabla resumen para cada parcial
+parciales_stats <- lapply(tiempos_parciales, function(parcial) {
+  resultadosTokyo2025 %>%
+    summarise(
+      Parcial = parcial,
+      Total_valores = sum(!is.na(.data[[parcial]])),
+      Valores_faltantes = sum(is.na(.data[[parcial]])),
+      Media = round(mean(.data[[parcial]], na.rm = TRUE), 2),
+      Mediana = median(.data[[parcial]], na.rm = TRUE),
+      Moda = moda(.data[[parcial]])
+    ) %>%
+    mutate(
+      Media = as_hms(Media),
+      Mediana = as_hms(Mediana),
+      Moda = as_hms(Moda)
+    )
+})
+
+datatable(
+  do.call(rbind, parciales_stats),
+  options = list(dom = 't'),
+  rownames = FALSE,
+  caption = "Tabla: Estadísticos de centralización para cada parcial."
+)
+```
+
+Para representar de forma gráfica la distribución de los tiempos parciales, se ha optado por un gráfico de densidad para cada parcial, con una línea discontinua que indica la mediana de cada distribución.
+
+```{r}
+df_plot <- resultadosTokyo2025 %>%
+  select(all_of(tiempos_parciales)) %>%
+  pivot_longer(everything(), names_to = "parcial", values_to = "segundos") %>%
+  filter(!is.na(segundos)) %>%
+  mutate(parcial = factor(parcial, levels = tiempos_parciales))
+
+medianas <- df_plot %>%
+  group_by(parcial) %>%
+  summarise(mediana = median(segundos, na.rm = TRUE), .groups = "drop")
+
+etiquetas <- setNames(
+  c("Parcial 5km","Parcial 10km","Parcial 15km","Parcial 20km","Medio maratón",
+    "Parcial 25km","Parcial 30km","Parcial 35km","Parcial 40km"),
+  tiempos_parciales
+)
+
+p_density <- ggplot(df_plot, aes(x = segundos)) +
+  geom_density(fill = "#90CAF9", alpha = 0.6, na.rm = TRUE, linewidth = 0.4) +
+  geom_vline(data = medianas, aes(xintercept = mediana),
+             color = "#37474F", linetype = "dashed", linewidth = 0.6) +
+  facet_wrap(~parcial, scales = "free_x", ncol = 3, labeller = labeller(parcial = etiquetas)) +
+  scale_x_continuous(
+    breaks = function(x) pretty(x, n = 3),                       # pocas marcas por facet
+    labels = function(x) format(as_hms(x), "%H:%M"),             # mostrar hh:mm
+    expand = expansion(mult = c(0.03, 0.03))
+  ) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
+  labs(
+    title = "Densidad de tiempos por parcial",
+    x = "Tiempo (hh:mm)",
+    y = "Densidad"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    strip.text = element_text(face = "bold"),
+    panel.spacing = unit(1, "lines"),
+    panel.border = element_rect(color = "gray80", fill = NA, linewidth = 0.5),
+    strip.background = element_rect(fill = "#ECEFF1", color = NA),
+    axis.title.x = element_text(margin = margin(t = 6)),
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1), # rota etiquetas
+    plot.title = element_text(face = "bold")
+  )
+
+p_density
+```
+
+Se puede observar que a medida que avanza la carrera, la distribución de los tiempos parciales tiende a desplazarse hacia la derecha, indicando que los corredores tardan más en completar cada segmento a medida que avanza la maratón. Además, las distribuciones parecen volverse más anchas en los parciales posteriores, lo que sugiere una mayor variabilidad en los tiempos a medida que los corredores avanzan en la carrera y se fatigan.
+
+En cuanto a las principales medidas de dispersión en cada parcial, se presentan a continuación:
+
+```{r}
+# Tabla resumen para cada parcial
+parciales_disp_forma <- lapply(tiempos_parciales, function(parcial) {
+  resultadosTokyo2025 %>%
+    summarise(
+      Parcial = parcial,
+      Minimo = as_hms(min(.data[[parcial]], na.rm = TRUE)),
+      Maximo = as_hms(max(.data[[parcial]], na.rm = TRUE)),
+      Rango = as_hms(max(.data[[parcial]], na.rm = TRUE) - min(.data[[parcial]], na.rm = TRUE)),
+      Varianza = round(var(.data[[parcial]], na.rm = TRUE), 2),
+      Desviación_Estandar = round(sd(.data[[parcial]], na.rm = TRUE), 2),
+      Coeficiente_Variacion = round((sd(.data[[parcial]], na.rm = TRUE) / mean(.data[[parcial]], na.rm = TRUE)) * 100, 2),
+      Asimetría = round(skewness(.data[[parcial]], na.rm = TRUE), 2),
+      Curtosis = round(kurtosis(.data[[parcial]], na.rm = TRUE), 2)
+    )
+})
+
+datatable(
+  do.call(rbind, parciales_disp_forma),
+  options = list(dom = 't'),
+  rownames = FALSE,
+  caption = "Tabla: Estadísticos de dispersión y forma para cada parcial."
+)
+```
+
+De forma gráfica cada boxplot representa un parcial de la maratón.
+
+```{r}
+# Boxplots para cada parcial
+ggplot(df_plot, aes(y = segundos, x = parcial)) +
+  geom_boxplot(fill = "#90CAF9", color = "gray30", outlier.color = "red", outlier.size = 1.5) +
+  scale_x_discrete(
+    labels = etiquetas
+  ) +
+  scale_y_continuous(
+    labels = function(x) format(as_hms(x), "%H:%M"),
+    breaks = seq(0, 21600, by = 1800)
+  ) +
+  labs(
+    title = "Boxplots de tiempos por parcial",
+    x = "Parcial",
+    y = "Tiempo (hh:mm:ss)"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(face = "bold")
+  )
+```
+
+Estos boxplots muestran la distribución de los tiempos parciales para cada segmento de la maratón. Se observa que a medida que avanza la carrera, los tiempos tienden a aumentar, lo que es consistente con la fatiga acumulada de los corredores. Además, la variabilidad en los tiempos también parece aumentar en los parciales posteriores, lo que sugiere que algunos corredores logran mantener un ritmo más constante mientras que otros experimentan una mayor desaceleración.
 
 ### Nivel de los atletas
 
@@ -1036,15 +1173,15 @@ clasificar_atletas_fem <- function(resultadosTokyo2025, genero_col = Genero, tie
 
 ```{r}
 resultados_clasificados_masc <- clasificar_atletas_masc(resultadosTokyo2025)
-head(resultados_clasificados)
+head(resultados_clasificados_masc)
 ```
 
 ```{r}
 resultados_clasificados_fem <- clasificar_atletas_fem(resultadosTokyo2025)
-head(resultados_clasificados)
+head(resultados_clasificados_fem)
 ```
 
-## Análisis Bivariante y Multivariante
+# Análisis Bivariante y Multivariante
 
 <!-- Relación entre variables, correlaciones, visualizaciones conjuntas, etc. -->
 
@@ -1058,7 +1195,99 @@ tabla_doble_masc <- table(resultados_clasificados_masc$Edad, resultados_clasific
 tabla_doble_fem <- table(resultados_clasificados_fem$Edad, resultados_clasificados_fem$categoria)
 ```
 
-## Identificación de Patrones y Formulación de Preguntas
+En el siguiente gráfico se puede ver la relación entre los tiempo finales de los participantes y el genero de los mismos.
+
+```{r}
+# Boxplot tiempo oficial vs genero
+
+ggplot(resultadosTokyo2025, aes(x = Genero, y = tiempo_oficial, fill = Genero)) +
+  geom_boxplot(outlier.color = "red", outlier.size = 1.5) +
+  scale_y_continuous(
+    labels = function(x) as_hms(x),
+    breaks = seq(0, 21600, by = 1800)
+  ) +
+  labs(
+    title = "Tiempo Oficial por Género",
+    x = "Género",
+    y = "Tiempo Oficial (hh:mm:ss)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold", size = 16),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "none"
+  )
+```
+
+Se observa como los hombres tienden a tener tiempos oficiales más bajos que las mujeres y los corredores no binarios. Hay que tener en cuenta que para los corredores no binarios hay muy pocos datos, por lo que la interpretación de su boxplot puede no ser representativa.
+
+Ahora vamos a relacionar la edad con el genero de los corredores para ver si existe alguna diferencia en la edad de los participantes según su género.
+
+```{r}
+# Boxplot edad vs genero
+ggplot(resultadosTokyo2025, aes(x = Genero, y = Edad, fill = Genero)) +
+  geom_boxplot(outlier.color = "red", outlier.size = 1.5) +
+  labs(
+    title = "Edad de los Corredores por Género",
+    x = "Género",
+    y = "Edad (años)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold", size = 16),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "none"
+  )
+```
+
+Se observa que la mediana de edad es similar entre hombres y mujeres, aunque los hombres parecen tener una mayor variabilidad en sus edades. Los corredores no binarios tienen una mediana de edad más baja, pero nuevamente, el número de datos es muy limitado para hacer una interpretación sólida.
+
+En cuanto a la nacionalidad, vamos a ver los tiempos oficiales medios por país para los países con al menos 5 corredores.
+
+```{r}
+
+# preparar df con número de corredores por país
+freq_paises <- resultadosTokyo2025 %>%
+  count(Pais_Estandarizado, name = "n_corredores")
+
+# preparar df con tiempos medios por país
+tiempos_pais <- resultadosTokyo2025 %>%
+  group_by(Pais_Estandarizado) %>%
+  summarise(
+    Tiempo_Medio = as_hms(mean(tiempo_oficial, na.rm = TRUE)),
+    .groups = "drop"
+)
+
+plot_df <- tiempos_pais %>%
+  left_join(freq_paises, by = "Pais_Estandarizado") %>%
+  mutate(
+    n_corredores = ifelse(is.na(n_corredores), 0L, n_corredores),
+    Tiempo_Medio_num = as.numeric(Tiempo_Medio),
+    Tiempo_Medio_posix = as.POSIXct(Tiempo_Medio_num, origin = "1970-01-01", tz = "UTC"),
+    Tiempo_Medio_label = format(as_hms(Tiempo_Medio_num), "%H:%M")
+  )
+
+# Plotly interactivo: barra horizontal + hover con tiempo y nº corredores
+plot_ly(
+  plot_df,
+  x = ~Tiempo_Medio_posix,
+  y = ~reorder(Pais_Estandarizado, Tiempo_Medio_posix),
+  type = "bar",
+  orientation = "h",
+  marker = list(color = ~Tiempo_Medio_num, colorscale = "Plasma", reversescale = TRUE),
+  text = ~paste0(Pais_Estandarizado, "<br>Tiempo medio: ", Tiempo_Medio_label, "<br>N: ", n_corredores),
+  hovertemplate = "%{text}<extra></extra>"
+) %>%
+  layout(
+    title = "Tiempo Oficial Medio por País (interactivo)",
+    xaxis = list(tickformat = "%H:%M"),
+    margin = list(l = 220)
+  )
+```
+
+Es importante tener en cuenta el número de corredores, ya que los países con pocos corredores pueden tener tiempos medios menos representativos.
+
+# Identificación de Patrones y Formulación de Preguntas
 
 <!-- Detección de tendencias, patrones interesantes y planteamiento de preguntas para análisis futuros. -->
 **Posibles preguntas:**
@@ -1105,6 +1334,6 @@ tabla_doble_fem <- table(resultados_clasificados_fem$Edad, resultados_clasificad
 7. ¿Cuántos atletas olímpicos/internacionales han participado?
 
 
-## Conclusiones
+# Conclusiones
 
 <!-- Resumen de hallazgos principales y posibles líneas de investigación. -->
