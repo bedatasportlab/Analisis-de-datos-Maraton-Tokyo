@@ -848,11 +848,79 @@ La asimetría positiva (0.15) indica que la distribución de los tiempos oficial
 
 ### Tiempos Parciales
 
+### Nivel de los atletas
 
+```{r}
+clasificar_atletas_masc <- function(resultadosTokyo2025, genero_col = Genero, tiempo_col = tiempo_oficial) {
+  resultadosTokyo2025 %>%
+    mutate(
+      Genero_raw = tolower(trimws(as.character({{genero_col}}))),
+      Genero = case_when(
+        Genero_raw %in% c("women") ~ "F",
+        Genero_raw %in% c("men")   ~ "M",
+        TRUE ~ NA_character_
+      ),
+      tiempo_hms = as_hms({{tiempo_col}}),
+      categoria = case_when(
+        Genero == "M" & tiempo_hms < as_hms("02:17:00") ~ "Élite",
+        Genero == "M" & tiempo_hms < as_hms("02:30:00") ~ "Alto nivel",
+        Genero == "M" & tiempo_hms < as_hms("03:00:00") ~ "Muy entrenado",
+        Genero == "M" & tiempo_hms < as_hms("03:30:00") ~ "Moderadamente entrenado",
+        Genero == "M" & tiempo_hms >= as_hms("03:30:00") ~ "Principiante",
+        TRUE ~ "No élite"
+      )
+    ) %>%
+    select(-Genero_raw)
+}
+```
+
+```{r}
+clasificar_atletas_fem <- function(resultadosTokyo2025, genero_col = Genero, tiempo_col = tiempo_oficial) {
+  resultadosTokyo2025 %>%
+    mutate(
+      Genero_raw = tolower(trimws(as.character({{genero_col}}))),
+      Genero = case_when(
+        Genero_raw %in% c("women") ~ "F",
+        Genero_raw %in% c("men")   ~ "M",
+        TRUE ~ NA_character_
+      ),
+      tiempo_hms = as_hms({{tiempo_col}}),
+      categoria = case_when(
+        #mujeres
+        Genero == "F" & tiempo_hms < as_hms("02:43:00") ~ "Élite",
+        Genero == "F" & tiempo_hms < as_hms("03:00:00") ~ "Alto nivel",
+        Genero == "F" & tiempo_hms < as_hms("03:30:00") ~ "Muy entrenada",
+        Genero == "F" & tiempo_hms < as_hms("04:00:00") ~ "Moderadamente entrenada",
+        Genero == "F" & tiempo_hms >= as_hms("04:00:00") ~ "Principiante",
+      )
+    ) %>%
+    select(-Genero_raw)
+}
+```
+
+```{r}
+resultados_clasificados_masc <- clasificar_atletas_masc(resultadosTokyo2025)
+head(resultados_clasificados)
+```
+
+```{r}
+resultados_clasificados_fem <- clasificar_atletas_fem(resultadosTokyo2025)
+head(resultados_clasificados)
+```
 
 ## Análisis Bivariante y Multivariante
 
 <!-- Relación entre variables, correlaciones, visualizaciones conjuntas, etc. -->
+
+Tabla de doble entrada para edad y tiempo oficial
+
+```{r}
+tabla_doble_masc <- table(resultados_clasificados_masc$Edad, resultados_clasificados_masc$categoria)
+```
+
+```{r}
+tabla_doble_fem <- table(resultados_clasificados_fem$Edad, resultados_clasificados_fem$categoria)
+```
 
 ## Identificación de Patrones y Formulación de Preguntas
 
