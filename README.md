@@ -14,3 +14,7 @@ Este es un espacio dedicado al Análisis Exploratorio (EDA) de los datos de la "
 ## 🌐Impacto
 
 Puede ser de utilidad para entrenadores, managers deportivos, otros analistas de datos e investigadores en los campos de ciencias del deporte, fisiología, psicología o sociología.
+
+---
+
+##📊Comienza el análisis
