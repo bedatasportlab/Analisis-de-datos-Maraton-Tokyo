@@ -51,7 +51,7 @@ p, li {
 .quarto-title-block .title {
   text-align: center !important;
   width: 100%;
-  margin-bottom: 20px !important;
+  margin-bottom: 10px !important;
 }
 
 /* Dejar autor y fecha alineados a la izquierda */
@@ -59,4 +59,3 @@ p, li {
 .quarto-title-block .date {
   text-align: left !important;
 }
-
