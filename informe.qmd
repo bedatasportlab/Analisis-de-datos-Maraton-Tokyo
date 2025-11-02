@@ -15,13 +15,14 @@ number-sections: true
 lang: es
 keywords: ["maratón", "análisis de datos", "Tokyo"]
 abstract: "En el presente Análisis Exploratorio de Datos (EDA) se busca comprender los resultados que se han obtenido de la 'Major Marathon' de Tokyo 2025. En la etapa de limpieza se comprobará la coherencia de los datos para seguidamente poder estudiar las variables por separado (Análisis Univariante), crear otras nuevas y conocer cómo se relacionan entre ellas (Análisis Bivariante). De los resultados se podrán extraer conclusiones y plantear nuevas preguntas e ideas que sirvan de base para futuros análisis."
+execute: 
+  warning: false
 ---
+
 
 # Importación de librerías. 
 
-```{r}
-#| warning: false
-
+```{r, warning:false}
 # Importación de todas las librerías usadas durante el informe y breve descripcion
 library(readr) # Libreria para poder importar los datos desde un csv.
 library(ggplot2) # Libreria para poder hacer gráficos.
@@ -39,6 +40,7 @@ library(patchwork) # para combinar gráficos ggplot2
 library(skimr)
 library(naniar)
 library(grid) # para funciones de gráficos adicionales
+library(kableExtra)
 ```
 
 # Introducción
@@ -145,7 +147,7 @@ rm(filas, columnas)
 
 # Preparación y limpieza de los datos
 
-Como se ha podido observar en la lectura @sec-lecturafila, el dataset presenta diversas particularidades que requieren atención antes de proceder con el análisis estadístico univariante. En primer lugar, algunas variables presentan formatos mixtos (japonés e inglés separados por "/"), lo cual dificulta la legibilidad y el procesamiento posterior. En segundo lugar, los tiempos están almacenados en formato HMS (horas:minutos:segundos), lo que complica operaciones aritméticas y comparaciones. 
+Como se ha podido observar en la sección @sec-lecturafila, el dataset presenta diversas particularidades que requieren atención antes de proceder con el análisis estadístico univariante. En primer lugar, algunas variables presentan formatos mixtos (japonés e inglés separados por "/"), lo cual dificulta la legibilidad y el procesamiento posterior. En segundo lugar, los tiempos están almacenados en formato HMS (horas:minutos:segundos), lo que complica operaciones aritméticas y comparaciones. 
 
 Esta sección se procederá a la preparación del dataset mediante:
 
@@ -346,7 +348,7 @@ En esta sección se realizará la correspondiente limpieza y correción de datos
 
 ### Tratamiento de Valores Nulos {#sec-tratamiento-nulos}
 
-Vamos a realizar el correspondiente tratamiento de los **valores nulos**, como bien hemos adelantado en la @sec-valores-nulos, los datos faltantes correspondientes a las variables de *Nombre* y *Nacionalidad* ni se imputarán ni se eliminarán dichas filas. 
+Vamos a realizar el correspondiente tratamiento de los **valores nulos**, como bien hemos adelantado en la sección @sec-valores-nulos, los datos faltantes correspondientes a las variables de *Nombre* y *Nacionalidad* ni se imputarán ni se eliminarán dichas filas. 
 
 Respecto a la estrategia para los parciales, cabe destacar que ninguno de las filas corresponde a abandonos o descalificaciones ya que sí que existe su tiempo final al paso por la meta. Se ha decidido tratar los datos nulos de la siguiente manera: 
 
@@ -590,7 +592,7 @@ conteo_paises_limpios <- resultadosTokyo2025 %>%
 
 ```
 
-Observamos que, en principio, los errores están completamente corregidos. Para ver si los nuevos nombres estandarizados están correctamente, vamos a cruzar los países recién creados con un conjunto de datos muy usado para realizar luego mapas geográficos.
+Observamos que, en principio, los errores están completamente corregidos. Para ver si los nuevos nombres estandarizados están correctamente, vamos a cruzar los países recién creados con un conjunto de datos muy usado para realizar luego mapas geográficos con la librería [Plotly](https://plotly.com/r).
 
 ```{r}
 df <- read.csv("https://raw.githubusercontent.com/plotly/datasets/master/2014_world_gdp_with_codes.csv")
@@ -679,37 +681,26 @@ Los niveles han resultado así:
 - Principiante - + 03:30:00 (Men(M)) / + 04:00:00 (Women(W))
 
 ```{r}
-clasificar_atletas <- function(resultadosTokyo2025, genero_col = Genero, tiempo_col = tiempo_oficial) {
-  resultadosTokyo2025 %>%
-    mutate(
-      Genero_raw = tolower(trimws(as.character({{genero_col}}))),
-      Genero = case_when(
-        Genero_raw %in% c("women") ~ "F",
-        Genero_raw %in% c("men")   ~ "M",
-        TRUE ~ NA_character_
-      ),
-      tiempo_hms = as_hms({{tiempo_col}}),
-      categoria = case_when(
+resultadosTokyo2025<- resultadosTokyo2025 |> 
+  mutate(
+    categoria = case_when(
         #hombres
-        Genero == "M" & tiempo_hms < as_hms("02:17:00") ~ "Élite",
-        Genero == "M" & tiempo_hms < as_hms("02:30:00") ~ "Alto nivel",
-        Genero == "M" & tiempo_hms < as_hms("03:00:00") ~ "Muy entrenado",
-        Genero == "M" & tiempo_hms < as_hms("03:30:00") ~ "Moderadamente entrenado",
-        Genero == "M" & tiempo_hms >= as_hms("03:30:00") ~ "Principiante",
+        Genero == "Men" & tiempo_oficial < as.numeric(as_hms("02:17:00")) ~ "Élite",
+        Genero == "Men" & tiempo_oficial < as.numeric(as_hms("02:30:00")) ~ "Alto nivel",
+        Genero == "Men" & tiempo_oficial < as.numeric(as_hms("03:00:00")) ~ "Muy entrenado",
+        Genero == "Men" & tiempo_oficial < as.numeric(as_hms("03:30:00")) ~ "Moderadamente entrenado",
+        Genero == "Men" & tiempo_oficial >= as.numeric(as_hms("03:30:00")) ~ "Principiante",
         #mujeres
-        Genero == "F" & tiempo_hms < as_hms("02:43:00") ~ "Élite",
-        Genero == "F" & tiempo_hms < as_hms("03:00:00") ~ "Alto nivel",
-        Genero == "F" & tiempo_hms < as_hms("03:30:00") ~ "Muy entrenada",
-        Genero == "F" & tiempo_hms < as_hms("04:00:00") ~ "Moderadamente entrenada",
-        Genero == "F" & tiempo_hms >= as_hms("04:00:00") ~ "Principiante",
+        Genero == "Women" & tiempo_oficial < as.numeric(as_hms("02:43:00")) ~ "Élite",
+        Genero == "Women" & tiempo_oficial < as.numeric(as_hms("03:00:00")) ~ "Alto nivel",
+        Genero == "Women" & tiempo_oficial < as.numeric(as_hms("03:30:00")) ~ "Muy entrenado",
+        Genero == "Women" & tiempo_oficial < as.numeric(as_hms("04:00:00")) ~ "Moderadamente entrenado",
+        Genero == "Women" & tiempo_oficial >= as.numeric(as_hms("04:00:00")) ~ "Principiante",
         
         TRUE ~ "No élite"
       ),
-      categoria = factor(categoria, levels = c("Élite", "Alto nivel", "Muy entrenado", "Muy entrenada", "Moderadamente entrenado", "Moderadamente entrenada", "Principiante", "No élite"))
-    ) %>%
-    select(-Genero_raw)
-}
-resultadosTokyo2025 <- clasificar_atletas(resultadosTokyo2025)
+      categoria = factor(categoria, levels = c("Élite", "Alto nivel", "Muy entrenado", "Moderadamente entrenado","Principiante", "No élite"))
+  )
 ```
 
 # Análisis Univariante
@@ -747,8 +738,6 @@ datatable(
 
 ```
 
-<!-- Interpretación de los estadísticos de centralización -->
-
 La edad media de los corredores que participaron en la maratón de Tokyo 2025 es de aproximadamente 46 años, con una mediana de 47 años y una moda de 50 años. Esto indica que la distribución de edades está muy ligeramente sesgada hacia edades mayores, ya que la media es menor que la mediana. La moda sugiere que la edad más común entre los corredores es de 50 años, lo que podría indicar una mayor participación de corredores en este rango de edad.
 
 Representado de forma gráfica, en la siguiente figura se observa un histograma con línea de densidad.
@@ -761,9 +750,19 @@ ggplot(resultadosTokyo2025, aes(x = Edad)) +
   labs(title = "Distribución de Edad",
        x = "Edad (años)", y = "Densidad") +
   theme_minimal(base_size = 12)
+
+cat(
+  "Skewness:", skewness(resultadosTokyo2025$Edad, na.rm = TRUE), "\n",
+  "Kurtosis:", kurtosis(resultadosTokyo2025$Edad, na.rm = TRUE)
+)
 ```
 
-En esta gráfica se observa que la distribución de edades de los corredores es aproximadamente normal, con una ligera asimetría positiva (hacia la derecha). La mayoría de los corredores tienen edades comprendidas entre los 25 y 40 años, con un pico alrededor de los 30 años. La media, mediana y moda están bastante cercanas entre sí, lo que indica que la distribución es simétrica.
+Combinando los resultados de la gráfica con los valores de *Skewness* y *Kurtosis*, la variable edad presenta una asimetría mínima (*skewness* ≈ -0.06), indicando una distribución prácticamente simétrica. Su kurtosis negativa (-0.58) muestra que la distribución es ligeramente más plana que una normal, con colas algo menos pesadas. En conjunto, la distribución puede considerarse aproximadamente normal para fines de análisis estadístico.
+
+La mayoría de los corredores tienen edades comprendidas entre los 25 y 40 años, con un pico alrededor de los 30 años.
+
+**Nota:** *La función kurtosis() del paquete e1071 calcula la excess kurtosis, es decir, la curtosis menos 3. La interpretamos con el objetivo de ver si es normal ya que un valor de curtosis = 3 indicaría que sus colas son idénticas a la distribución normal*
+
 
 A continuación se presentan los estadísticos de dispersión y forma de la distribución de edades.
 
@@ -777,8 +776,6 @@ edad_disp_forma <- resultadosTokyo2025 %>%
     Desviación_Estandar = round(sd(Edad, na.rm = TRUE), 2),
     Desviacion_tipica = round(sqrt(var(Edad, na.rm = TRUE)), 2),
     Coeficiente_Variacion = round((sd(Edad, na.rm = TRUE) / mean(Edad, na.rm = TRUE)) * 100, 2),
-    Asimetría = round(skewness(Edad, na.rm = TRUE), 2),
-    Curtosis = round(kurtosis(Edad, na.rm = TRUE), 2)
   )
 
 datatable(
@@ -789,11 +786,7 @@ datatable(
 
 ```
 
-<!-- Interpretación de los resultados de los estadísticos de dispersión -->
-
 Las edades varían desde un mínimo de 18 años hasta un máximo de 84 años, con un rango total de 65 años. La varianza (122,64) y la desviación estándar (11,07) indican que hay una dispersión moderada en las edades de los corredores. El coeficiente de variación del 23,77% sugiere que la variabilidad relativa de las edades es considerable.
-
-La asimetría negativa (-0,06) indica que la distribución de edades es ligeramente sesgada hacia la izquierda, aunque está muy cerca de cero, lo que sugiere una distribución casi simétrica. La curtosis (-0,58) indica que la distribución de edades es ligeramente más plana que una distribución normal, lo que sugiere que hay menos valores extremos en las edades de los corredores.
 
 En la siguiente grafica se observa un boxplot que muestra la dispersión de las edades de los corredores.
 
@@ -923,12 +916,15 @@ fig
 
 En este mapa se puede observar que el país que más participantes tuvo fue Japón, seguramente debido a que dicha maratón se realizó en este país. Otros países que llevaron más de 1000 corredores fueron Estados Unidos, Taiwán, China e Inglaterra.
 
+```{r}
+rm(frecuencia_paises, fig)
+```
+
 ## Tiempo Oficial
 
-En el caso de las variables de timepos, se realizará el análisis con las columnas transformadas a segundos pero reflejando los resultados en formato horas, minutos y segundos para una mejor interpretación. Esta transformación implica que la varible es numérica continua. Como en las variables anteriores, se comenzará con los estadísticos de centralización.
+En el caso de las variables de tiempo, se realizará el análisis con las columnas transformadas a segundos pero reflejando los resultados en formato horas, minutos y segundos para una mejor interpretación. Esta transformación implica que la varible es numérica continua. Como en variables numéricas anteriores, se comenzará con los estadísticos de centralización.
 
 ```{r}
-
 # Estadísticos resumidos (redondeados)
 tiempo_stats <- resultadosTokyo2025 %>%
   summarise(
@@ -954,9 +950,7 @@ datatable(
 )
 ```
 
-<!-- Interpretación de los estadísticos de centralización -->
-
-La media del tiempo oficial de los corredores que participaron en la maratón de Tokyo 2025 es de aproximadamente 4 horas, 40 minutos y 23 segundos, con una mediana de 4 horas, 36 minutos y 13 segundos. Esto indica que la distribución de los tiempos está sesgada positivamente, ya que la media es mayor que la mediana, es decir, hay corredores con tiempos significativamente más altos que elevan la media. La moda sugiere que el tiempo más común entre los corredores es de 4 horas, 15 minutos y 30 segundos.
+La media del tiempo oficial de los corredores que participaron en la maratón de Tokyo 2025 es de aproximadamente 4 horas, 40 minutos y 23 segundos, lo que sugiere que es una **prueba dominada por atletas amateurs** en números de participación. Con una mediana de 4 horas, 36 minutos y 13 segundos. Esto indica que la distribución de los tiempos está sesgada positivamente, ya que la media es mayor que la mediana, es decir, hay corredores con tiempos significativamente más altos que elevan la media. La moda sugiere que el tiempo más común entre los corredores es de 4 horas, 15 minutos y 30 segundos.
 
 Representado de forma gráfica, en la siguiente figura se observa un histograma con línea de densidad.
 
@@ -1002,11 +996,15 @@ datatable(
 )
 ```
 
-<!-- Interpretación de los resultados de los estadísticos de dispersión -->
-
-El rango de 4 horas, 56 minutos y 55 segundos indica una amplia variabilidad en los tiempos oficiales de los corredores. La desviación estándar de 3898.73	(~1 hora y 5 minutos) sugiere que los tiempos suelen oscilar alrededor de ±1 h de la media, lo que implica cierta variabilidad, pero no excesiva. El coeficiente de variación del 23.77% indica que la variabilidad relativa de los tiempos oficiales es considerable.
+El rango de 4 horas, 56 minutos y 55 segundos indica una amplia variabilidad en los tiempos oficiales de los corredores. La desviación estándar de 3898.73	(1 hora y 5 minutos aproximadamente) sugiere que los tiempos suelen oscilar alrededor de ±1 h de la media, lo que implica bastante variabilidad. El coeficiente de variación del 23.77% indica que la variabilidad relativa de los tiempos oficiales es considerable.
 
 La asimetría positiva (0.15) indica que la distribución de los tiempos oficiales está ligeramente sesgada hacia la derecha, lo que significa que hay más corredores con tiempos superiores a la media. La curtosis (-0.87) indica que la distribución de los tiempos oficiales es más plana que una distribución normal, lo que sugiere que hay menos valores extremos en los tiempos oficiales de los corredores. 
+
+Como **conclusión**, al deberse a un conjunto de datos de una maratón de libre participación en Tokyo, podemos observar una gran variabilidad de tiempos que se distribuye de manera creciente. Es decir, en general contra mayor es el tiempo final, más gente podemos encontrar en ese nivel de carrera. 
+
+```{r}
+rm(tiempo_disp_forma, tiempo_stats)
+```
 
 ## Tiempos Parciales
 
@@ -1094,7 +1092,7 @@ p_density <- ggplot(df_plot, aes(x = segundos)) +
 p_density
 ```
 
-Se puede observar que a medida que avanza la carrera, la distribución de los tiempos parciales tiende a desplazarse hacia la derecha, indicando que los corredores tardan más en completar cada segmento a medida que avanza la maratón. Además, las distribuciones parecen volverse más anchas en los parciales posteriores, lo que sugiere una mayor variabilidad en los tiempos a medida que los corredores avanzan en la carrera y se fatigan.
+Se puede observar que a medida que avanza la carrera, la distribución de los tiempos parciales tiende a desplazarse hacia la derecha, indicando que los corredores tardan más en completar cada segmento a medida que avanza la maratón. Además, las distribuciones parecen volverse más anchas en los parciales posteriores, lo que sugiere una mayor variabilidad en los tiempos a medida que los corredores avanzan en la carrera y se fatigan. 
 
 En cuanto a las principales medidas de dispersión en cada parcial, se presentan a continuación:
 
@@ -1148,7 +1146,7 @@ ggplot(df_plot, aes(y = segundos, x = parcial)) +
   )
 ```
 
-Estos boxplots muestran la distribución de los tiempos parciales para cada segmento de la maratón. Se observa que a medida que avanza la carrera, los tiempos tienden a aumentar, lo que es consistente con la fatiga acumulada de los corredores. Además, la variabilidad en los tiempos también parece aumentar en los parciales posteriores, lo que sugiere que algunos corredores logran mantener un ritmo más constante mientras que otros experimentan una mayor desaceleración.
+Estos boxplots muestran la distribución de los tiempos parciales para cada segmento de la maratón. Se observa que a medida que avanza la carrera, la variabilidad en los tiempos parece aumentar en los parciales posteriores, lo que sugiere que algunos corredores logran mantener un ritmo más constante mientras que otros experimentan una mayor desaceleración.
 
 ## Ritmos
 
@@ -1220,6 +1218,10 @@ ggplot(resultadosTokyo2025, aes(x = ritmo_oficial)) +
 
 Se puede observar que la mayoría de los corredores tienen un ritmo oficial entre 5 y 8 minutos por kilómetro, con un pico alrededor de los 5 minutos y 40 segundos por kilómetro. La distribución del ritmo oficial es ligeramente asimétrica hacia la derecha, lo que indica que hay algunos corredores con ritmos significativamente más lentos que elevan la media.
 
+```{r}
+rm(df_plot, df_ritmos, medianas, p_density, parciales_disp_forma, parciales_stats, ritmos_parciales, tiempos_parciales)
+```
+
 # Análisis Bivariante y Multivariante
 
 Una vez realizado en análisis de las variables por separado, se procede a observar cómo se relacionan unas con otras y qué información aporta dicha relación.
@@ -1229,9 +1231,21 @@ Una vez realizado en análisis de las variables por separado, se procede a obser
 En el siguiente gráfico se puede ver la relación entre los tiempo finales de los participantes y el genero de los mismos.
 
 ```{r}
-# Boxplot tiempo oficial vs genero
+# Obtener niveles en el orden actual
+niveles_genero <- unique(resultadosTokyo2025$Genero)
+# Generar paleta viridis con el mismo número de niveles
+paleta_base <- viridis(length(niveles_genero), option = "viridis")
+names(paleta_base) <- niveles_genero
+
+# Intercambiar colores entre Women y Non-Binary
+temp_color <- paleta_base["Women"]
+paleta_base["Women"] <- paleta_base["Non-binary"]
+paleta_base["Non-binary"] <- temp_color
+
+# Gráfico
 ggplot(resultadosTokyo2025, aes(x = Genero, y = tiempo_oficial, fill = Genero)) +
   geom_boxplot(outlier.color = "red", outlier.size = 1.5) +
+  scale_fill_manual(values = paleta_base) +
   scale_y_continuous(
     labels = function(x) as_hms(x),
     breaks = seq(0, 21600, by = 1800)
@@ -1247,6 +1261,9 @@ ggplot(resultadosTokyo2025, aes(x = Genero, y = tiempo_oficial, fill = Genero)) 
     axis.text.x = element_text(angle = 45, hjust = 1),
     legend.position = "none"
   )
+
+rm(niveles_genero, paleta_base, temp_color)
+
 ```
 
 Se observa como los hombres tienden a tener tiempos oficiales más bajos que las mujeres y los corredores no binarios. Hay que tener en cuenta que para los corredores no binarios hay muy pocos datos, por lo que la interpretación de su boxplot puede no ser representativa. 
@@ -1254,9 +1271,22 @@ Se observa como los hombres tienden a tener tiempos oficiales más bajos que las
 De igual forma se puede observar a través de un gráfico de densidad que muestra la distribución de los tiempos oficiales según el género de los corredores.
 
 ```{r}
-# Densidad tiempo oficial por genero
+# Obtener niveles de género presentes en los datos
+niveles_genero <- unique(resultadosTokyo2025$Genero)
+
+# Generar paleta viridis según esos niveles
+paleta_base <- viridis(length(niveles_genero), option = "viridis")
+names(paleta_base) <- niveles_genero
+
+# Intercambiar colores entre Women y Non-Binary
+temp_color <- paleta_base["Women"]
+paleta_base["Women"] <- paleta_base["Non-binary"]
+paleta_base["Non-binary"] <- temp_color
+
+# Gráfico de densidad
 ggplot(resultadosTokyo2025, aes(x = tiempo_oficial, fill = Genero)) +
   geom_density(alpha = 0.6, na.rm = TRUE, linewidth = 0.4) +
+  scale_fill_manual(values = paleta_base) +
   scale_x_continuous(
     breaks = seq(0, 21600, by = 1800),
     labels = function(x) as_hms(x),
@@ -1265,33 +1295,32 @@ ggplot(resultadosTokyo2025, aes(x = tiempo_oficial, fill = Genero)) +
   labs(
     title = "Densidad del Tiempo Oficial por Género",
     x = "Tiempo Oficial (hh:mm:ss)",
-    y = "Densidad",
+    y = "Densidad"
   ) +
   theme_minimal(base_size = 12) +
   theme(
-    plot.title = element_text(face = "bold"),
-    legend.position = "top"
+    plot.title = element_text(face = "bold", size = 16),
+    legend.position = "top",
+    legend.title = element_blank()
   )
+
+rm(niveles_genero, paleta_base, temp_color)
 ```
 
-Se puede observar como los hombres tienden a tener una distribución más concentrada en tiempos más bajos, mientras que las mujeres tienen una distribución más amplia y desplazada hacia tiempos más altos. Los corredores no binarios muestran una distribución diferente, pero debido a la baja cantidad de datos, es difícil sacar conclusiones definitivas.
+Se puede observar como los hombres tienden a tener una distribución centrada en tiempos más bajos, mientras que las mujeres tienen una distribución más amplia y desplazada hacia tiempos más altos. Los corredores no binarios muestran una distribución diferente, muy estable a lo largo de los tiempos oficiales, pero debido a la baja cantidad de datos, es difícil sacar conclusiones definitivas.
 
 ## Tiempo oficial y edad
 
-En el gráfico que sigue se observa la relación entre los tiempos oficiales de los corredores y su edad.
+A continuación vamos a analizar la relación existente entre la edad y los tiempos oficiales. Para ello, vamos a transformar la edad a categórica con el objetivo de visualizar la relación a través de grupos de edad.
+
+Visualizamos la distribución de tiempos para cada grupo de edad a través de un box-plot: 
 
 ```{r}
 # Crear grupos de edad de 5 años desde 15 hasta 90
-resultadosTokyo2025 <- resultadosTokyo2025 %>%
-  mutate(
-    tiempo_min = as.numeric(as_hms(tiempo_oficial)) / 60,  # convertir tiempo a minutos
-    grupo_edad = cut(
-      Edad,
-      breaks = seq(15, 90, by = 5),
-      right = FALSE,
-      labels = paste(seq(15, 85, by = 5), seq(19, 89, by = 5), sep = "-")
-    )
-  )
+
+ resultadosTokyo2025 <- resultadosTokyo2025 %>% 
+  mutate( tiempo_min = as.numeric(as_hms(tiempo_oficial)) / 60, 
+   grupo_edad = cut( Edad, breaks = seq(15, 90, by = 5), right = FALSE, labels = paste(seq(15, 85, by = 5), seq(19, 89, by = 5), sep = "-") ) )
 
 # Boxplot por grupo de edad
 ggplot(resultadosTokyo2025, aes(x = grupo_edad, y = tiempo_min)) +
@@ -1309,7 +1338,9 @@ ggplot(resultadosTokyo2025, aes(x = grupo_edad, y = tiempo_min)) +
   )
 ```
 
-Se puede ver que la mediana de los tiempos, los valores superiores y los inferiores son más bajos para los grupos de edad "30-34", "35-39" y "40-44". También se observa que la variabilidad es similar en todos los grupos de edad salvo en el grupo "20-24" (es mayor) y "15-19", "70-74", "75-79" y "80-84", (es menor).
+Si nos fijamos en las distribuciones de tiempos para cada grupo de edad, podemos observar que tiene una forma de "U" con el primer extremo más bajo que el segundo, es decir, para rangos de edad de entre 30 y 50, tanto en media como en general, se producen **mejores tiempos oficiales**. También se observa que la variabilidad es similar en todos los grupos de edad salvo en el grupo "20-24" (es mayor) y "15-19", "70-74", "75-79" y "80-84", (es menor).
+
+Se podría concluir que, con los datos referentes al maratón de Tokyo de 2025, el pico de rendimiento de los deportistas se alcanza entre los 30 y 50 años y que, a partir de aquí, se produce una bajada de rendimiento visible en los tiempos finales y su distribución.
 
 ## Tiempo oficial y nacionalidad
 
@@ -1358,14 +1389,30 @@ plot_ly(
 
 Se puede observar como en Japón, país anfitrión, el tiempo medio oficial es de aproximadamente 4 horas y 46 minutos pero cuenta con hasta casi 19000 corredores. Por otro lado, otros países con menos corredores como Kenia o Etiopía tienen tiempos medios oficiales significativamente mejores, alrededor de 2 horas y 12 minutos, lo que refleja un mayor nivel de los corredores de estos países. Por ello al analizar estos datos hay que tener en cuenta el número de corredores de cada país para interpretar correctamente los tiempos medios oficiales.
 
+```{r}
+rm(tickvals, ticktext, etiquetas_ritmo, etiquetas, tiempos_medios_paises)
+```
+
 ## Género y edad
 
 Ahora vamos a relacionar la edad con el genero de los corredores para ver si existe alguna diferencia en la edad de los participantes según su género.
 
 ```{r}
-# Boxplot edad vs genero
+# Obtener los niveles de la variable Género
+niveles_genero <- unique(resultadosTokyo2025$Genero)
+# Crear la paleta viridis según el número de géneros
+paleta_base <- viridis(length(niveles_genero), option = "viridis")
+names(paleta_base) <- niveles_genero
+
+# Intercambiar colores entre Women y Non-Binary (manteniendo Men igual)
+temp_color <- paleta_base["Women"]
+paleta_base["Women"] <- paleta_base["Non-binary"]
+paleta_base["Non-binary"] <- temp_color
+
+# Boxplot Edad vs Género
 ggplot(resultadosTokyo2025, aes(x = Genero, y = Edad, fill = Genero)) +
   geom_boxplot(outlier.color = "red", outlier.size = 1.5) +
+  scale_fill_manual(values = paleta_base) +
   labs(
     title = "Edad de los Corredores por Género",
     x = "Género",
@@ -1377,6 +1424,9 @@ ggplot(resultadosTokyo2025, aes(x = Genero, y = Edad, fill = Genero)) +
     axis.text.x = element_text(angle = 45, hjust = 1),
     legend.position = "none"
   )
+
+  rm(paleta_base, temp_color, niveles_genero)
+
 ```
 
 Se observa que la mediana de edad es similar entre hombres y mujeres, aunque los hombres parecen tener una mayor variabilidad en sus edades. Los corredores no binarios tienen una mediana de edad más baja, pero nuevamente, el número de datos es muy limitado para hacer una interpretación sólida.
@@ -1396,16 +1446,18 @@ p_smooth <- ggplot(resultadosTokyo2025, aes(x = Edad, y = tiempo_oficial, color 
   theme_minimal()
 p_smooth
 
+rm(p_smooth, sec_to_hhmm)
+
 ```
 
 ## Definición de estrategias
 
 Al conocer los tiempos de paso cada 5 kilómetros se han podido obtener los ritmos en min/km de cada parcial. Siguiendo la evolución de estos ritmos parciales se pueden definir varios tipos de estrategias:
 
-- Positiva: a medida que avanza la carrera el ritmo aumenta
-- Negativa: a medida que avanza la carrera el ritmo disminuye
-- Uniforme: el ritmo es igual durante toda la carrera
-- Parabólica: los primeros y últimos kilómetros son más rápidos que los centrales
+- **Positiva**: a medida que avanza la carrera el ritmo aumenta
+- **Negativa**: a medida que avanza la carrera el ritmo disminuye
+- **Uniforme**: el ritmo es igual durante toda la carrera
+- **Parabólica**: los primeros y últimos kilómetros son más rápidos que los centrales
 
 ```{r}
 tolerancia <- 8  # margen en segundos
@@ -1549,7 +1601,7 @@ colores_okabe_ito <- c(
 )
 
 # --- HOMBRES ---
-ggplot(resultadosTokyo2025 %>% filter(Genero == "M"),
+ggplot(resultadosTokyo2025 %>% filter(Genero == "Men"),
        aes(x = categoria, fill = estrategia)) +
   geom_bar(position = "fill") +  # proporciones
   scale_y_continuous(labels = scales::percent) +
@@ -1568,7 +1620,7 @@ ggplot(resultadosTokyo2025 %>% filter(Genero == "M"),
   )
 
 # --- MUJERES ---
-ggplot(resultadosTokyo2025 %>% filter(Genero == "F"),
+ggplot(resultadosTokyo2025 %>% filter(Genero == "Women"),
        aes(x = categoria, fill = estrategia)) +
   geom_bar(position = "fill") +
   scale_y_continuous(labels = scales::percent) +
@@ -1585,6 +1637,8 @@ ggplot(resultadosTokyo2025 %>% filter(Genero == "F"),
     plot.title = element_text(face = "bold", size = 16),
     legend.position = "bottom"
   )
+
+rm(estrategias_edad, colores_okabe_ito, cols_tiempo, tolerancia, moda)
 ```
 
 Estas dos gráficas ilustran la principal diferencia entre el nivel de los atletas más allá del resultado objetivo marcado por el tiempo oficial. 
@@ -1592,6 +1646,157 @@ La proporción de atletas que optaron por una táctica uniforme fue de aproximad
 En los atletas de alto nivel, la proporción fue de alrededor de un 40% en hombres y un 50% en mujeres.
 Tanto para el sexo masculino como para el femenino, la proporción de atletas muy entrenados que llevaron una táctica uniforme está entre el 20% y el 25%.
 La proporción más alta de atletas que optaron por una estrategia negativa (recorrer los últimos kilómetros más rápido que los primeros) se ha dado en atletas masculinos y femeninos de nivel "moderamente entrenado".
+
+
+## Cálculo del Tokyo Performance Index (TPI)
+
+En la actual sección vamos a calcular el **Tokyo Performance Index (TPI)**, un sistema de puntuación diseñado para evaluar el rendimiento individual de los corredores en la Maratón de Tokio 2025 mediante una medida relativa a los mejores registros conocidos.  
+Este índice se construye a partir del **tiempo oficial final** de cada participante y de un **tiempo de referencia**, en este caso el **récord mundial** vigente.
+
+La fórmula utilizada tiene carácter **exponencial**, de forma que la puntuación máxima (1000 puntos) se asigna al corredor cuyo tiempo coincide con el de referencia, y el resto de participantes obtiene valores decrecientes en función de su desviación relativa.  
+Concretamente, el índice se define como:
+
+$$
+TPI = 1000 \times e^{-k \cdot \frac{T - T_{ref}}{T_{ref}}}
+$$
+
+donde:  
+- \( T \) representa el tiempo oficial del corredor (en segundos),  
+- \( T_{ref} \) el tiempo de referencia (récord o mejor marca), y  
+- \( k \) un parámetro de ajuste que controla la penalización de los tiempos más lentos.  
+
+De este modo, el TPI permite **normalizar los resultados** y **comparar rendimientos** entre corredores de distinto sexo y edad, eliminando el efecto del tiempo absoluto y centrándose en la proximidad al rendimiento máximo posible.
+
+```{r}
+# Récords mundiales de maratón
+# Hombre: 2:00:35 (Kelvin Kiptum)
+# Mujer: 2:09:56 (Ruth Chepngetich) 
+
+record_men <- 2*3600 + 0*60 + 35    # en segundos: 2h 00m 35s  
+record_women <- 2*3600 + 9*60 + 56  # en segundos: 2h 09m 56s  
+
+# Parámetro de penalización
+k <- 5  
+
+# Calcular TPI en el data frame
+resultadosTokyo2025 <- resultadosTokyo2025 %>%
+  mutate(
+    # Asignar el récord correspondiente según género
+    ref_seg = case_when(
+      Genero == "Men" ~ record_men,
+      Genero == "Women" ~ record_women,
+      TRUE ~ (record_men + record_women) / 2  # para otros géneros, usar promedio como referencia
+    ),
+    # Cálculo del TPI
+    TPI = 1000 * exp(-k * ((tiempo_oficial - ref_seg) / ref_seg))
+  )
+
+  resultadosTokyo2025$ref_seg <- NULL
+```
+
+### Ránking de países por TPI
+
+A partir del TPI calculado para cada atleta, vamos a calcular la media de puntos obtenida por país, para evaluar el rendimiento de cada país. 
+
+```{r}
+ranking_paises <- resultadosTokyo2025 %>%
+  group_by(Pais_Estandarizado) %>%
+  summarise(Media_TPI = round(mean(TPI, na.rm = TRUE), digits=2)) %>%
+  arrange(desc(Media_TPI)) %>%
+  mutate(Ranking = row_number()) %>%
+  select(Ranking, Pais_Estandarizado, Media_TPI)
+
+datatable(
+  ranking_paises,
+  rownames = FALSE,
+  options = list(
+    pageLength = 5,      # Mostrar 5 filas por página
+    dom = 'tip',         # Mostrar tabla + información de paginación
+    ordering = TRUE,
+    columnDefs = list(list(className = 'dt-center', targets = c(0, 2))) # Centrar Ranking y Media_TPI
+  )
+)
+
+ggplot(head(ranking_paises, 5), aes(x = reorder(Pais_Estandarizado, Media_TPI), y = Media_TPI, fill = Pais_Estandarizado)) +
+  geom_col(show.legend = FALSE, width = 0.6) +
+  coord_flip() +
+  scale_fill_viridis_d(option = "viridis") +
+  geom_text(aes(label = round(Media_TPI, 1)), hjust = -0.2, size = 4) +
+  labs(
+    title = "🏅 Top 5 Países por Media del Tokyo Performance Index (TPI)",
+    x = "País",
+    y = "Media del TPI"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(face = "bold", size = 16),
+    axis.title.y = element_text(face = "bold"),
+    axis.title.x = element_text(face = "bold"),
+    axis.text = element_text(size = 12),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_blank()
+  ) +
+  ylim(0, max(ranking_paises$Media_TPI) * 1.1)  # deja espacio para las etiquetas
+
+
+```
+
+### Mejor país agrupado por TPI y por categoría del corredor
+
+Una vez realizado el ránking por países, ahora vamos a realizar el mismo proceso pero agrupando por nivel del corredor, para ver el nivel de cada país adaptado al tipo de participantes que llevó a la Maratón.
+
+```{r}
+ranking_categorias <- resultadosTokyo2025 %>%
+  group_by(categoria, Pais_Estandarizado) %>%
+  summarise(Media_TPI = round(mean(TPI, na.rm = TRUE), 2), .groups = "drop") %>%
+  arrange(categoria, desc(Media_TPI))
+
+top5_por_categoria <- ranking_categorias %>%
+  group_by(categoria) %>%
+  slice_max(order_by = Media_TPI, n = 5, with_ties = FALSE) %>%
+  mutate(Ranking = row_number()) %>%
+  ungroup() %>%
+  select(categoria, Ranking, Pais_Estandarizado, Media_TPI)
+
+
+categorias <- unique(top5_por_categoria$categoria)
+
+
+for (cat in categorias) {
+  
+  cat("### 🏁 Categoría:", cat, "\n\n")
+  
+  top5_por_categoria %>%
+    filter(categoria == cat) %>%
+    select(-categoria) %>%
+    kable(
+      caption = paste("Top 5 Países —", cat),
+      align = "c",
+      col.names = c("Ranking", "País", "Media TPI")
+    ) %>%
+    print()
+  
+  cat("\n\n")
+}
+```
+
+
+### Podium de los mejores atletas del Maratón Tokyo 2025. 
+
+```{r}
+
+top3_corredores <- resultadosTokyo2025 %>%
+  arrange(desc(TPI)) %>%
+  slice_head(n = 3) %>%
+  mutate(
+    Puesto = row_number(),
+    tiempo_oficial = as_hms(tiempo_oficial)  # conversión a formato hh:mm:ss
+  ) %>%
+  select(Puesto, Nombre, Pais_Estandarizado, tiempo_oficial, Genero)
+
+kable(top3_corredores)
+```
+
 
 # Identificación de Patrones y Formulación de Preguntas
 
