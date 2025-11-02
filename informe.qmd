@@ -785,7 +785,7 @@ datatable(
 
 ```
 
-Las edades varían desde un mínimo de 18 años hasta un máximo de 84 años, con un rango total de 65 años. La varianza (122,64) y la desviación estándar (11,07) indican que hay una dispersión moderada en las edades de los corredores. El coeficiente de variación del 23,77% sugiere que la variabilidad relativa de las edades es considerable.
+Las edades varían desde un mínimo de 19 años hasta un máximo de 84 años, con un rango total de 65 años. La varianza (122,64) y la desviación estándar (11,07) indican que hay una dispersión moderada en las edades de los corredores. El coeficiente de variación del 23,77% sugiere que la variabilidad relativa de las edades es considerable.
 
 En la siguiente grafica se observa un boxplot que muestra la dispersión de las edades de los corredores.
 
