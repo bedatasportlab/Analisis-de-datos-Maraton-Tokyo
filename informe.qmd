@@ -686,6 +686,7 @@ clasificar_atletas <- function(resultadosTokyo2025, genero_col = Genero, tiempo_
       Genero = case_when(
         Genero_raw %in% c("women") ~ "F",
         Genero_raw %in% c("men")   ~ "M",
+        Genero_raw %in% c("Non-Binary") ~ "NB",
         TRUE ~ NA_character_
       ),
       tiempo_hms = as_hms({{tiempo_col}}),
