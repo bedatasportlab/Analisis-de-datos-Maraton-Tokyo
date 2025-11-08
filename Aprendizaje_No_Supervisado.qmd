@@ -1,0 +1,85 @@
+---
+title: "Aprendizaje No Supervisado. La Maratón de Tokyo 2025."
+author:
+  - "Alba Martínez de la Hermosa"
+  - "Alonso González Romero"
+  - "Daniel López Paredes"
+date: "2025-10-16"
+format: 
+  html:
+    css: style.css
+    title-block-banner: true
+    embed-resources: true
+    self-contained: true
+toc: true
+toc-depth: 2
+number-sections: true
+lang: es
+keywords: ["maratón", "análisis de datos", "Tokyo"]
+abstract: "Por realizar"
+execute: 
+  warning: false
+---
+
+# Importacion de librerías y datos
+```{r}
+# Importo el df de resultadosTokyo tras el EDA realizado: 
+resultadosTokyo2025 <-readRDS("resultadosTokyo2025.rds")
+
+# Importo las librerías necesarias: 
+source("librerias.R")
+```
+
+
+# Análisis de Componentes Principales
+
+El **Análisis de Componentes Principales (PCA, por sus siglas en inglés *Principal Component Analysis*)** es una técnica de reducción de dimensionalidad no supervisada que transforma un conjunto de variables correlacionadas en un conjunto más pequeño de variables no correlacionadas llamadas **componentes principales**. 
+
+## PCA sobre ritmos de carrera a través de los parciales. 
+
+A continuación vamos a realizar un PCA sobre el conjunto de datos que tenemos, eligiendo las variables referentes a los ritmos en cada parcial y la edad de cada atleta: 
+
+```{r}
+#Variables a usar
+vars <- c("Edad", "tiempo_oficial", "ritmo_5km", "ritmo_10km", "ritmo_15km", "ritmo_20km", "ritmo_25km",
+            "ritmo_30km", "ritmo_35km", "ritmo_40km")
+
+# 1. Crear un dataframe solo con esas variables
+df_pca <-resultadosTokyo2025[, vars]
+
+# 2️⃣ Convertir las variables 'hms' a numéricas (en segundos)
+df_pca <- df_pca %>%
+  mutate(across(starts_with("ritmo_"), as.numeric))
+
+# 3. Estandarizar variables (media 0, sd 1)
+df_pca_scaled <- scale(df_pca)
+
+# 4. Realizar PCA
+pca_res <- prcomp(df_pca_scaled, center = TRUE, scale. = TRUE)  # scale. = TRUE por si acaso
+
+# 5. Resumen del PCA
+summary(pca_res)  # explica la proporción de varianza de cada componente
+
+# 6. Ver autovalores y proporción de varianza
+pca_res$sdev^2        # autovalores
+pca_res$sdev^2 / sum(pca_res$sdev^2)  # proporción de varianza
+
+# 7. Ver autovectores (direcciones de los componentes principales)
+pca_res$rotation
+
+# 8. Obtener las coordenadas de los individuos en los componentes principales
+pca_scores <- pca_res$x
+head(pca_scores)
+
+# 9. Opcional: gráfico de los dos primeros componentes
+ggplot(as.data.frame(pca_scores), aes(x = PC1, y = PC2)) +
+  geom_point() +
+  theme_minimal() +
+  labs(title = "PCA: primeros dos componentes")
+
+```
+
+Según se puede observar, el PC1 indica una media ponderada entre los ritmos de carrera y el tiempo final, lo que indicará que, contra menor tiempo, más a la izquierda. La segunda se basa simplemente en la edad, por lo tanto corrredores más arriba serán corredores más viejos. 
+
+
+**IDEA** algún tipo de PCA para graficar a los países. (coger la media de tiempos en cada uno por ejemplo para graficar grupos)
